@@ -1,4 +1,5 @@
 # core HAL config file for simulation
+# ntripodsim components
 
 # first load all the RT modules that will be needed
 # kinematics
