@@ -1,5 +1,5 @@
 /********************************************************************
- Last change:                   2015.20.5 14:30 Pacific Time Taiwan
+ Last change:                   2015.22.4 14:30 Pacific Time Taiwan
 ********************************************************************/
 #include "kinematics.h"             /* these decls */
 #include "rtapi_math.h"
