@@ -35,6 +35,7 @@ struct haldata {
 #define delta_f (*(haldata->f))    
 #define delta_re (*(haldata->re))  
 #define delta_rf (*(haldata->rf)) 
+#define VTVERSION VTKINEMATICS_VERSION1
 
  /* trigonometric constants */
  const double sqrt3 = 1.7320508075688772935274463415059;   /* sqrt(3.0);*/
@@ -191,18 +192,34 @@ RTAPI main is the only function implemented
 #include "rtapi_app.h"
 #include "hal.h"
 
-EXPORT_SYMBOL(kinematicsType);
-EXPORT_SYMBOL(kinematicsForward);
-EXPORT_SYMBOL(kinematicsInverse);
 
-MODULE_LICENSE("GPL")
 
-int comp_id;
+static vtkins_t vtk = {
+    .kinematicsForward = kinematicsForward,
+    .kinematicsInverse  = kinematicsInverse,
+    // .kinematicsHome = kinematicsHome,
+    .kinematicsType = kinematicsType
+};
+
+static int comp_id, vtable_id;
+static const char *name = "ntripodkins";
+MODULE_LICENSE("GPL");
+
 int rtapi_app_main(void) {
     int res = 0;
 
     comp_id = hal_init("ntripodkins");
     if(comp_id < 0) return comp_id;
+
+
+ vtable_id = hal_export_vtable(name, VTVERSION, &vtk, comp_id);
+    if (vtable_id < 0) {
+        rtapi_print_msg(RTAPI_MSG_ERR,
+                        "%s: ERROR: hal_export_vtable(%s,%d,%p) failed: %d\n",
+                        name, name, VTVERSION, &vtk, vtable_id );
+        return -ENOENT;
+    }
+
 
     haldata = hal_malloc(sizeof(struct haldata));
     if(!haldata) goto error;
@@ -221,6 +238,10 @@ error:
     return res;
 }
 
-void rtapi_app_exit(void) { hal_exit(comp_id); }
 
                                                      
+void rtapi_app_exit(void)
+{
+    hal_remove_vtable(vtable_id);
+    hal_exit(comp_id);
+}

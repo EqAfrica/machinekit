@@ -6,10 +6,10 @@
 # first load all the RT modules that will be needed
 # kinematics
 loadrt ntripodkins
-setp ntripodkins.e 
-setp ntripodkins.f 
-setp ntripodkins.re 
-setp ntripodkins.rf 
+setp ntripodkins.e 115.0 
+setp ntripodkins.f 457.3
+setp ntripodkins.re 232.0
+setp ntripodkins.rf 112.0
 
 
 # motion controller, get name and thread periods from ini file
