@@ -1,16 +1,8 @@
-<<<<<<< HEAD
-# ntripod hal system
-#
-# core HAL config file for simulation
-# ntripodsim components
-=======
-# core HAL config file for simulation
->>>>>>> c01773447196b072f2711b0c091a44a2bd26f7b3
 
 # first load all the RT modules that will be needed
 # kinematics
 loadrt ntripodkins
-<<<<<<< HEAD
+
 setp ntripodkins.e 115.0 
 setp ntripodkins.f 457.3
 setp ntripodkins.re 232.0
@@ -22,15 +14,12 @@ loadrt tp
 # motion controller, get name and thread periods from ini file
 # loadrt [EMCMOT]EMCMOT servo_period_nsec=[EMCMOT]SERVO_PERIOD
 loadrt [EMCMOT]EMCMOT base_period_nsec=[EMCMOT]BASE_PERIOD servo_period_nsec=[EMCMOT]SERVO_PERIOD num_joints=[TRAJ]AXES kins=ntripodkins tp=tp
-=======
+
 setp ntripodkins.Bx 10
 setp ntripodkins.Cx 5
 setp ntripodkins.Cy 7.071
 
-# motion controller, get name and thread periods from ini file
-# loadrt [EMCMOT]EMCMOT servo_period_nsec=[EMCMOT]SERVO_PERIOD
-loadrt [EMCMOT]EMCMOT base_period_nsec=[EMCMOT]BASE_PERIOD servo_period_nsec=[EMCMOT]SERVO_PERIOD num_joints=[TRAJ]AXES
->>>>>>> c01773447196b072f2711b0c091a44a2bd26f7b3
+
 # 6 differentiators (for velocity and accel sigs)
 loadrt ddt names=ddt_j0,ddt_j1,ddt_j2,ddt_j0v,ddt_j1v,ddt_j2v
 
