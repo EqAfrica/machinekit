@@ -51,6 +51,7 @@ typedef struct {
     double settings[ACTIVE_SETTINGS];
     int gcodes[ACTIVE_G_CODES];
     int mcodes[ACTIVE_M_CODES];
+    int call_level;
 } LineCode;
 
 static PyObject *LineCode_gcodes(LineCode *l) {
@@ -68,6 +69,7 @@ static PyGetSetDef LineCodeGetSet[] = {
 
 static PyMemberDef LineCodeMembers[] = {
     {(char*)"sequence_number", T_INT, offsetof(LineCode, gcodes[0]), READONLY},
+    {(char*)"call_level", T_INT, offsetof(LineCode, call_level), READONLY},
 
     {(char*)"feed_rate", T_DOUBLE, offsetof(LineCode, settings[1]), READONLY},
     {(char*)"speed", T_DOUBLE, offsetof(LineCode, settings[2]), READONLY},
@@ -161,6 +163,7 @@ static void maybe_new_line(int sequence_number) {
     interp_new.active_g_codes(new_line_code->gcodes);
     interp_new.active_m_codes(new_line_code->mcodes);
     new_line_code->gcodes[0] = sequence_number;
+    new_line_code->call_level = interp_new.call_level();
     last_sequence_number = sequence_number;
     PyObject *result = 
         callmethod(callback, "next_line", "O", new_line_code);
@@ -401,10 +404,17 @@ void STOP_CUTTER_RADIUS_COMPENSATION(int direction) {}
 void START_SPEED_FEED_SYNCH() {}
 void START_SPEED_FEED_SYNCH(double sync, bool vel) {}
 void STOP_SPEED_FEED_SYNCH() {}
-void START_SPINDLE_COUNTERCLOCKWISE() {}
-void START_SPINDLE_CLOCKWISE() {}
+void START_SPINDLE_COUNTERCLOCKWISE(int line) {}
+void START_SPINDLE_CLOCKWISE(int line) {}
 void SET_SPINDLE_MODE(double) {}
-void STOP_SPINDLE_TURNING() {}
+void STOP_SPINDLE_TURNING(int l) {
+    maybe_new_line(l);
+    if(interp_error) return;
+    PyObject *result =
+        callmethod(callback, "stop_spindle_turning", "f");
+    if(result == NULL) interp_error ++;
+    Py_XDECREF(result);
+}
 void SET_SPINDLE_SPEED(double rpm) {}
 void ORIENT_SPINDLE(double d, int i) {}
 void WAIT_SPINDLE_ORIENT_COMPLETE(double timeout) {}
@@ -454,14 +464,14 @@ void MIST_OFF() {}
 void FLOOD_OFF() {}
 void MIST_ON() {}
 void FLOOD_ON() {}
-void CLEAR_AUX_OUTPUT_BIT(int bit) {}
-void SET_AUX_OUTPUT_BIT(int bit) {}
+void CLEAR_AUX_OUTPUT_BIT(int bit, int line) {}
+void SET_AUX_OUTPUT_BIT(int bit, int line) {}
 void SET_AUX_OUTPUT_VALUE(int index, double value) {}
-void CLEAR_MOTION_OUTPUT_BIT(int bit) {}
-void SET_MOTION_OUTPUT_BIT(int bit) {}
+void CLEAR_MOTION_OUTPUT_BIT(int bit, int line) {}
+void SET_MOTION_OUTPUT_BIT(int bit, int line) {}
 void SET_MOTION_OUTPUT_VALUE(int index, double value) {}
 void TURN_PROBE_ON() {}
-void TURN_PROBE_OFF() {}
+void TURN_PROBE_OFF(unsigned char probe_type) {}
 int UNLOCK_ROTARY(int line_no, int axis) {return 0;}
 int LOCK_ROTARY(int line_no, int axis) {return 0;}
 void INTERP_ABORT(int reason,const char *message) {}
@@ -517,6 +527,21 @@ double GET_EXTERNAL_POSITION_C() { return _pos_c; }
 double GET_EXTERNAL_POSITION_U() { return _pos_u; }
 double GET_EXTERNAL_POSITION_V() { return _pos_v; }
 double GET_EXTERNAL_POSITION_W() { return _pos_w; }
+void INTERP_UPDATE_END_POINT(double x, double y, double z,
+                             double a, double b, double c,
+                             double u, double v, double w)
+{
+    _pos_x = x;
+    _pos_y = y;
+    _pos_z = z;
+    _pos_a = a;
+    _pos_b = b;
+    _pos_c = c;
+    _pos_u = u;
+    _pos_v = v;
+    _pos_w = w;
+};
+
 void INIT_CANON() {}
 void GET_EXTERNAL_PARAMETER_FILE_NAME(char *name, int max_size) {
     PyObject *result = PyObject_GetAttrString(callback, "parameter_file");
@@ -544,14 +569,15 @@ CANON_TOOL_TABLE GET_EXTERNAL_TOOL_TABLE(int pocket) {
 
 int GET_EXTERNAL_DIGITAL_INPUT(int index, int def) { return def; }
 double GET_EXTERNAL_ANALOG_INPUT(int index, double def) { return def; }
-int WAIT(int index, int input_type, int wait_type, double timeout) { return 0;}
+int WAIT(int index, int input_type, int wait_type, double timeout, int line) { return 0;}
 
-static void user_defined_function(int num, double arg1, double arg2) {
+static void user_defined_function(int num, double arg1, double arg2, double arg3,
+                                  double arg4, double arg5, double arg6, double arg7) {
     if(interp_error) return;
     maybe_new_line();
     PyObject *result =
         callmethod(callback, "user_defined_function",
-                            "idd", num, arg1, arg2);
+                            "idd", num, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
     if(result == NULL) interp_error++;
     Py_XDECREF(result);
 }
@@ -680,6 +706,7 @@ void SET_MOTION_CONTROL_MODE(double tolerance) { }
 void SET_MOTION_CONTROL_MODE(CANON_MOTION_MODE mode) { motion_mode = mode; }
 CANON_MOTION_MODE GET_EXTERNAL_MOTION_CONTROL_MODE() { return motion_mode; }
 void SET_NAIVECAM_TOLERANCE(double tolerance) { }
+void SET_INTERP_PARAMS(int call_level, int remap_level) { };
 
 #define RESULT_OK (result == INTERP_OK || result == INTERP_EXECUTE_FINISH)
 static PyObject *parse_file(PyObject *self, PyObject *args) {

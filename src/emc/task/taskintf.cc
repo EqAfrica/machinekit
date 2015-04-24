@@ -76,6 +76,7 @@ static int localMotionEchoSerialNumber = 0;
 static unsigned char localEmcAxisAxisType[EMCMOT_MAX_JOINTS];
 static double localEmcAxisUnits[EMCMOT_MAX_JOINTS];
 static double localEmcMaxAcceleration = DBL_MAX;
+static double localEmcMaxJerk = DBL_MAX;
 
 // axes are numbered 0..NUM-1
 
@@ -273,6 +274,17 @@ int emcAxisSetHomingParams(int axis, double home, double offset, double home_fin
     if (locking_indexer) {
         emcmotCommand.flags |= HOME_UNLOCK_FIRST;
     }
+    
+    if (axis_sync_id[axis] >= 0) {
+        if (axis < axis_sync_id[axis]) {
+            // the axis with lower SYNC_ID is GANTRY_MASTER
+            emcmotCommand.flags |= HOME_GANTRY_MASTER;
+            emcmotCommand.flags |= HOME_GANTRY_JOINT;
+        } else {
+            // the axis with greater SYNC_ID is GANTRY_SLAVE
+            emcmotCommand.flags |= HOME_GANTRY_JOINT;
+        }
+    }
 
     return usrmotWriteEmcmotCommand(&emcmotCommand);
 }
@@ -309,6 +321,48 @@ int emcAxisSetMaxAcceleration(int axis, double acc)
     emcmotCommand.axis = axis;
     emcmotCommand.acc = acc;
     return usrmotWriteEmcmotCommand(&emcmotCommand);
+}
+
+int emcAxisSetMaxJerk(int axis, double jerk)
+{
+
+    if (axis < 0 || axis >= EMC_AXIS_MAX) {
+	return 0;
+    }
+    if (jerk < 0.0) {
+    	jerk = 0.0;
+    }
+    axis_max_jerk[axis] = jerk;
+    emcmotCommand.command = EMCMOT_SET_JOINT_JERK_LIMIT;
+    emcmotCommand.axis = axis;
+    emcmotCommand.acc = jerk;
+    return usrmotWriteEmcmotCommand(&emcmotCommand);
+}
+
+int emcAxisSetSyncId(int axis, int sync_id)
+{
+    if (axis < 0 || axis >= EMC_AXIS_MAX) {
+        rcs_print_error("%s (%s:%d) Invalid axis(%d)\n", __FILE__, __FUNCTION__, __LINE__,
+                        axis);
+        return -1;
+    }
+    if ((sync_id == axis) || (sync_id >= EMC_AXIS_MAX)) {
+        rcs_print_error("%s (%s:%d) Invalid sync_id(%d) for axis(%d)\n", __FILE__, __FUNCTION__, __LINE__,
+                        sync_id, axis);
+        return -1;
+    }
+
+    if (sync_id < 0) {
+        /* invalid sync_id, disable synchronized motion for this axis */
+        axis_sync_en[axis] = 0;
+        axis_sync_id[axis] = -1;
+    } else {
+        /* enable and specify synchronized axis */
+        axis_sync_en[axis] = 1;
+        axis_sync_id[axis] = sync_id;
+    }
+
+    return 0;
 }
 
 /* This function checks to see if any axis or the traj has
@@ -377,6 +431,14 @@ int emcAxisAbort(int axis)
     if (axis < 0 || axis >= EMCMOT_MAX_JOINTS) {
 	return 0;
     }
+
+    if (axis_sync_en[axis] && (emcmotStatus.motion_state == EMCMOT_MOTION_FREE)) {
+        // synchronize jog for gantry joint
+        emcmotCommand.command = EMCMOT_AXIS_ABORT;
+        emcmotCommand.axis = axis_sync_id[axis];
+        usrmotWriteEmcmotCommand(&emcmotCommand);
+    }
+
     emcmotCommand.command = EMCMOT_AXIS_ABORT;
     emcmotCommand.axis = axis;
 
@@ -480,6 +542,14 @@ int emcAxisJog(int axis, double vel)
 	vel = -axis_max_velocity[axis];
     }
 
+    if (axis_sync_en[axis] && (emcmotStatus.motion_state == EMCMOT_MOTION_FREE)) {
+        // synchronize jog for gantry joint
+        emcmotCommand.command = EMCMOT_JOG_CONT;
+        emcmotCommand.axis = axis_sync_id[axis];
+        emcmotCommand.vel = vel;
+        usrmotWriteEmcmotCommand(&emcmotCommand);
+    }
+
     emcmotCommand.command = EMCMOT_JOG_CONT;
     emcmotCommand.axis = axis;
     emcmotCommand.vel = vel;
@@ -497,6 +567,15 @@ int emcAxisIncrJog(int axis, double incr, double vel)
 	vel = axis_max_velocity[axis];
     } else if (vel < -axis_max_velocity[axis]) {
 	vel = -axis_max_velocity[axis];
+    }
+    
+    if (axis_sync_en[axis] && (emcmotStatus.motion_state == EMCMOT_MOTION_FREE)) {
+        // synchronize jog for gantry joint
+        emcmotCommand.command = EMCMOT_JOG_INCR;
+        emcmotCommand.axis = axis_sync_id[axis];
+        emcmotCommand.vel = vel;
+        emcmotCommand.offset = incr;
+        usrmotWriteEmcmotCommand(&emcmotCommand);
     }
 
     emcmotCommand.command = EMCMOT_JOG_INCR;
@@ -517,6 +596,15 @@ int emcAxisAbsJog(int axis, double pos, double vel)
 	vel = axis_max_velocity[axis];
     } else if (vel < -axis_max_velocity[axis]) {
 	vel = -axis_max_velocity[axis];
+    }
+
+    if (axis_sync_en[axis] && (emcmotStatus.motion_state == EMCMOT_MOTION_FREE)) {
+        // synchronize jog for gantry joint
+        emcmotCommand.command = EMCMOT_JOG_ABS;
+        emcmotCommand.axis = axis_sync_id[axis];
+        emcmotCommand.vel = vel;
+        emcmotCommand.offset = pos;
+        usrmotWriteEmcmotCommand(&emcmotCommand);
     }
 
     emcmotCommand.command = EMCMOT_JOG_ABS;
@@ -747,6 +835,20 @@ int emcTrajSetAcceleration(double acc)
     return usrmotWriteEmcmotCommand(&emcmotCommand);
 }
 
+int emcTrajSetJerk(double jerk)
+{
+    if (jerk < 0.0) {
+    	jerk = 0.0;
+    } else if (jerk > localEmcMaxJerk) {
+    	jerk = localEmcMaxJerk;
+    }
+
+    emcmotCommand.command = EMCMOT_SET_JERK;
+    emcmotCommand.jerk = jerk;
+
+    return usrmotWriteEmcmotCommand(&emcmotCommand);
+}
+
 /*
   emcmot has no limits on max velocity, acceleration so we'll save them
   here and apply them in the functions above
@@ -772,6 +874,17 @@ int emcTrajSetMaxAcceleration(double acc)
     }
 
     localEmcMaxAcceleration = acc;
+
+    return 0;
+}
+
+int emcTrajSetMaxJerk(double jerk)
+{
+    if (jerk < 0.0) {
+    	jerk = 0.0;
+    }
+
+    localEmcMaxJerk = jerk;
 
     return 0;
 }
@@ -981,7 +1094,7 @@ int emcTrajSetTermCond(int cond, double tolerance)
     return usrmotWriteEmcmotCommand(&emcmotCommand);
 }
 
-int emcTrajLinearMove(EmcPose end, int type, double vel, double ini_maxvel, double acc,
+int emcTrajLinearMove(EmcPose end, int type, double vel, double ini_maxvel, double acc, double jerk,
                       int indexrotary)
 {
 #ifdef ISNAN_TRAP
@@ -1003,13 +1116,14 @@ int emcTrajLinearMove(EmcPose end, int type, double vel, double ini_maxvel, doub
     emcmotCommand.vel = vel;
     emcmotCommand.ini_maxvel = ini_maxvel;
     emcmotCommand.acc = acc;
+    emcmotCommand.ini_maxjerk = jerk;
     emcmotCommand.turn = indexrotary;
 
     return usrmotWriteEmcmotCommand(&emcmotCommand);
 }
 
 int emcTrajCircularMove(EmcPose end, PM_CARTESIAN center,
-			PM_CARTESIAN normal, int turn, int type, double vel, double ini_maxvel, double acc)
+			PM_CARTESIAN normal, int turn, int type, double vel, double ini_maxvel, double acc, double ini_maxjerk)
 {
 #ifdef ISNAN_TRAP
     if (isnan(end.tran.x) || isnan(end.tran.y) || isnan(end.tran.z) ||
@@ -1042,6 +1156,7 @@ int emcTrajCircularMove(EmcPose end, PM_CARTESIAN center,
     emcmotCommand.vel = vel;
     emcmotCommand.ini_maxvel = ini_maxvel;
     emcmotCommand.acc = acc;
+    emcmotCommand.ini_maxjerk = ini_maxjerk;
 
     return usrmotWriteEmcmotCommand(&emcmotCommand);
 }
@@ -1053,7 +1168,15 @@ int emcTrajClearProbeTrippedFlag()
     return usrmotWriteEmcmotCommand(&emcmotCommand);
 }
 
-int emcTrajProbe(EmcPose pos, int type, double vel, double ini_maxvel, double acc, unsigned char probe_type)
+int emcTrajEndProbe(unsigned char probe_type)
+{
+    emcmotCommand.command = EMCMOT_END_PROBE;
+    emcmotCommand.probe_type = probe_type;
+
+    return usrmotWriteEmcmotCommand(&emcmotCommand);
+}
+
+int emcTrajProbe(EmcPose pos, int type, double vel, double ini_maxvel, double acc, double ini_maxjerk, unsigned char probe_type)
 {
 #ifdef ISNAN_TRAP
     if (isnan(pos.tran.x) || isnan(pos.tran.y) || isnan(pos.tran.z) ||
@@ -1072,12 +1195,13 @@ int emcTrajProbe(EmcPose pos, int type, double vel, double ini_maxvel, double ac
     emcmotCommand.vel = vel;
     emcmotCommand.ini_maxvel = ini_maxvel;
     emcmotCommand.acc = acc;
+    emcmotCommand.ini_maxjerk = ini_maxjerk;
     emcmotCommand.probe_type = probe_type;
 
     return usrmotWriteEmcmotCommand(&emcmotCommand);
 }
 
-int emcTrajRigidTap(EmcPose pos, double vel, double ini_maxvel, double acc)
+int emcTrajRigidTap(EmcPose pos, double vel, double ini_maxvel, double acc, double ini_maxjerk)
 {
 #ifdef ISNAN_TRAP
     if (isnan(pos.tran.x) || isnan(pos.tran.y) || isnan(pos.tran.z)) {
@@ -1088,11 +1212,13 @@ int emcTrajRigidTap(EmcPose pos, double vel, double ini_maxvel, double acc)
 
     emcmotCommand.command = EMCMOT_RIGID_TAP;
     emcmotCommand.pos.tran = pos.tran;
+    emcmotCommand.pos.tran = pos.tran;
     emcmotCommand.id = localEmcTrajMotionId;
     emcmotCommand.tag = localEmcTrajTag;
     emcmotCommand.vel = vel;
     emcmotCommand.ini_maxvel = ini_maxvel;
     emcmotCommand.acc = acc;
+    emcmotCommand.ini_maxjerk = ini_maxjerk;
 
     return usrmotWriteEmcmotCommand(&emcmotCommand);
 }
@@ -1144,6 +1270,8 @@ int emcTrajUpdate(EMC_TRAJ_STAT * stat)
     stat->tag = newtag;
     stat->motion_type = emcmotStatus.motionType;
     stat->distance_to_go = emcmotStatus.distance_to_go;
+    stat->prim_dtg = emcmotStatus.prim_dtg;
+    stat->prim_progress = emcmotStatus.prim_progress;
     stat->dtg = emcmotStatus.dtg;
     stat->current_vel = emcmotStatus.current_vel;
     if (EMC_DEBUG_MOTION_TIME & emc_debug) {
@@ -1158,7 +1286,8 @@ int emcTrajUpdate(EMC_TRAJ_STAT * stat)
 	}
     }
 
-    stat->paused = emcmotStatus.pause_state;
+    stat->pause_state = emcmotStatus.pause_state;
+    stat->tp_reverse_input = emcmotStatus.tp_reverse_input;
     stat->scale = emcmotStatus.feed_scale;
     stat->spindle_scale = emcmotStatus.spindle_scale;
 
@@ -1169,6 +1298,7 @@ int emcTrajUpdate(EMC_TRAJ_STAT * stat)
     stat->velocity = emcmotStatus.vel;
     stat->acceleration = emcmotStatus.acc;
     stat->maxAcceleration = localEmcMaxAcceleration;
+    stat->maxJerk = localEmcMaxJerk;
 
     if (emcmotStatus.motionFlag & EMCMOT_MOTION_ERROR_BIT) {
 	stat->status = RCS_ERROR;
@@ -1194,6 +1324,10 @@ int emcTrajUpdate(EMC_TRAJ_STAT * stat)
     stat->probing = emcmotStatus.probing;
     stat->probe_tripped = emcmotStatus.probeTripped;
     
+#ifdef USB_MOTION_ENABLE
+    stat->update_pos_req = emcmotStatus.update_pos_req;   // update position request from RISC
+#endif
+
     if (emcmotStatus.motionFlag & EMCMOT_MOTION_COORD_BIT)
         enables = emcmotStatus.enables_queued;
     else
@@ -1277,7 +1411,6 @@ int emcMotionInit()
 	    r1 = -1;		// at least one is busted
 	}
     }
-
 
     r3 = emcPositionLoad();
 
@@ -1566,6 +1699,13 @@ int emcSetupArcBlends(int arcBlendEnable,
     emcmotCommand.arcBlendOptDepth = arcBlendOptDepth;
     emcmotCommand.arcBlendGapCycles = arcBlendGapCycles;
     emcmotCommand.arcBlendRampFreq = arcBlendRampFreq;
+    return usrmotWriteEmcmotCommand(&emcmotCommand);
+}
+
+int emcSetupUsbMot(int usbmotEnable)
+{
+    emcmotCommand.command = EMCMOT_SETUP_USBMOT;
+    emcmotCommand.usbmotEnable = usbmotEnable;
     return usrmotWriteEmcmotCommand(&emcmotCommand);
 }
 

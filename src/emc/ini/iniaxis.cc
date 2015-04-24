@@ -101,13 +101,15 @@ static int loadAxis(int axis, EmcIniFile *axisIniFile)
     int comp_file_type; //type for the compensation file. type==0 means nom, forw, rev. 
     double maxVelocity;
     double maxAcceleration;
+    double maxJerk;
     double ferror;
+    int sync_id;
 
     // compose string to match, axis = 0 -> AXIS_0, etc.
     sprintf(axisString, "AXIS_%d", axis);
 
     axisIniFile->EnableExceptions(EmcIniFile::ERR_CONVERSION);
-    
+
     try {
         // set axis type
         axisType = EMC_AXIS_LINEAR;	// default
@@ -219,6 +221,10 @@ static int loadAxis(int axis, EmcIniFile *axisIniFile)
         locking_indexer = false;
         axisIniFile->Find(&locking_indexer, "LOCKING_INDEXER", axisString);
 
+        sync_id = -1;  // default to non-gantry-type-axis
+        axisIniFile->Find(&sync_id, "SYNC_ID", axisString);
+        emcAxisSetSyncId(axis, sync_id); //!< the axis with lower ID is GANTRY_MASTER
+
         // issue NML message to set all params
         if (0 != emcAxisSetHomingParams(axis, home, offset, home_final_vel, search_vel,
                                         latch_vel, (int)use_index, (int)ignore_limits,
@@ -254,6 +260,18 @@ static int loadAxis(int axis, EmcIniFile *axisIniFile)
 
         old_inihal_data.max_acceleration[axis] = maxAcceleration;
 
+        maxJerk = DEFAULT_AXIS_MAX_JERK;
+        axisIniFile->Find(&maxJerk, "MAX_JERK", axisString);
+
+        if (0 != emcAxisSetMaxJerk(axis, maxJerk)) {
+            if (emc_debug & EMC_DEBUG_CONFIG) {
+                rcs_print_error("bad return from emcAxisSetMaxJerk\n");
+            }
+            return -1;
+        }
+
+        old_inihal_data.max_jerk[axis] = maxJerk;
+
         comp_file_type = 0;             // default
         axisIniFile->Find(&comp_file_type, "COMP_FILE_TYPE", axisString);
 
@@ -266,7 +284,6 @@ static int loadAxis(int axis, EmcIniFile *axisIniFile)
             }
         }
     }
-
 
     catch(EmcIniFile::Exception &e){
         e.Print();

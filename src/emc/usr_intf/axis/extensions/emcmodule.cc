@@ -332,7 +332,10 @@ static PyMemberDef Stat_members[] = {
     {(char*)"active_queue", T_INT, O(motion.traj.activeQueue), READONLY},
     {(char*)"queue_full", T_BOOL, O(motion.traj.queueFull), READONLY},
     {(char*)"id", T_INT, O(motion.traj.id), READONLY},
-    {(char*)"paused", T_BOOL, O(motion.traj.paused), READONLY},
+    {(char*)"pause_state", T_INT, O(motion.traj.pause_state), READONLY},
+    {(char*)"next_tp_reversed", T_BOOL, O(motion.traj.next_tp_reversed), READONLY},
+    {(char*)"cur_tp_reversed", T_BOOL, O(motion.traj.cur_tp_reversed), READONLY},
+    {(char*)"tp_reverse_input", T_BOOL, O(motion.traj.tp_reverse_input), READONLY},
     {(char*)"feedrate", T_DOUBLE, O(motion.traj.scale), READONLY},
     {(char*)"spindlerate", T_DOUBLE, O(motion.traj.spindle_scale), READONLY},
     
@@ -346,6 +349,8 @@ static PyMemberDef Stat_members[] = {
     {(char*)"kinematics_type", T_INT, O(motion.traj.kinematics_type), READONLY},
     {(char*)"motion_type", T_INT, O(motion.traj.motion_type), READONLY},
     {(char*)"distance_to_go", T_DOUBLE, O(motion.traj.distance_to_go), READONLY},
+    {(char*)"prim_dtg", T_DOUBLE, O(motion.traj.prim_dtg), READONLY},
+    {(char*)"prim_progress", T_DOUBLE, O(motion.traj.prim_progress), READONLY},
     {(char*)"current_vel", T_DOUBLE, O(motion.traj.current_vel), READONLY},
     {(char*)"feed_override_enabled", T_BOOL, O(motion.traj.feed_override_enabled), READONLY},
     {(char*)"spindle_override_enabled", T_BOOL, O(motion.traj.spindle_override_enabled), READONLY},
@@ -1936,11 +1941,11 @@ static PyObject *Logger_start(pyPositionLogger *s, PyObject *o) {
             bool add_point = s->npts < 2 || c != op->c;
             double x, y, z, rx, ry, rz;
             if(s->is_xyuv) {
-                x = status->motion.traj.position.tran.x - status->task.toolOffset.tran.x,
-                y = status->motion.traj.position.tran.y - status->task.toolOffset.tran.y,
+                x = status->motion.traj.actualPosition.tran.x - status->task.toolOffset.tran.x,
+                y = status->motion.traj.actualPosition.tran.y - status->task.toolOffset.tran.y,
                 z = s->foam_z;
-                rx = status->motion.traj.position.u - status->task.toolOffset.u,
-                ry = status->motion.traj.position.v - status->task.toolOffset.v,
+                rx = status->motion.traj.actualPosition.u - status->task.toolOffset.u,
+                ry = status->motion.traj.actualPosition.v - status->task.toolOffset.v,
                 rz = s->foam_w;
                 /* TODO .01, the distance at which a preview line is dropped,
                  * should either be dependent on units or configurable, because
@@ -1956,15 +1961,15 @@ static PyObject *Logger_start(pyPositionLogger *s, PyObject *o) {
                                 oop->rx, oop->ry, oop->rz);
             } else {
                 double pt[9] = {
-                    status->motion.traj.position.tran.x - status->task.toolOffset.tran.x,
-                    status->motion.traj.position.tran.y - status->task.toolOffset.tran.y,
-                    status->motion.traj.position.tran.z - status->task.toolOffset.tran.z,
-                    status->motion.traj.position.a - status->task.toolOffset.a,
-                    status->motion.traj.position.b - status->task.toolOffset.b,
-                    status->motion.traj.position.c - status->task.toolOffset.c,
-                    status->motion.traj.position.u - status->task.toolOffset.u,
-                    status->motion.traj.position.v - status->task.toolOffset.v,
-                    status->motion.traj.position.w - status->task.toolOffset.w};
+                    status->motion.traj.actualPosition.tran.x - status->task.toolOffset.tran.x,
+                    status->motion.traj.actualPosition.tran.y - status->task.toolOffset.tran.y,
+                    status->motion.traj.actualPosition.tran.z - status->task.toolOffset.tran.z,
+                    status->motion.traj.actualPosition.a - status->task.toolOffset.a,
+                    status->motion.traj.actualPosition.b - status->task.toolOffset.b,
+                    status->motion.traj.actualPosition.c - status->task.toolOffset.c,
+                    status->motion.traj.actualPosition.u - status->task.toolOffset.u,
+                    status->motion.traj.actualPosition.v - status->task.toolOffset.v,
+                    status->motion.traj.actualPosition.w - status->task.toolOffset.w};
 
                 double p[3];
                 vertex9(pt, p, s->geometry);

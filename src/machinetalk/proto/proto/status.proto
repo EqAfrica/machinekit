@@ -279,7 +279,7 @@ message EmcStatusMotion {
     optional int32                  motion_line             = 28;
     optional EmcTrajectoryModeType  motion_type             = 29;
     optional EmcTrajectoryModeType  motion_mode             = 30;
-    optional bool                   paused                  = 31;
+    optional int32                  pause_state             = 31;
     optional Position               position                = 32;
     optional bool                   probe_tripped           = 33;
     optional int32                  probe_val               = 34;
@@ -298,6 +298,11 @@ message EmcStatusMotion {
     optional RCS_STATUS             state                   = 47;
     optional double                 max_velocity            = 48;
     optional double                 max_acceleration        = 49;
+    optional double                 prim_dtg                = 50;
+    optional double                 prim_progress           = 51;
+    optional bool                   cur_tp_reversed         = 52;
+    optional bool                   next_tp_reversed        = 53;
+    optional bool                   tp_reverse_input        = 54;
 }
 
 message EmcStatusIo {

@@ -776,8 +776,9 @@ class EMC_TRAJ_LINEAR_MOVE:public EMC_TRAJ_CMD_MSG {
     void update(CMS * cms);
 
     int type;
-    EmcPose end;		// end point
-    double vel, ini_maxvel, acc;
+    EmcPose begin;		// begin point
+    EmcPose end;                // end point
+    double vel, ini_maxvel, acc, ini_maxjerk;
     int feed_mode;
     int indexrotary;
 };
@@ -792,12 +793,13 @@ class EMC_TRAJ_CIRCULAR_MOVE:public EMC_TRAJ_CMD_MSG {
     // For internal NML/CMS use only.
     void update(CMS * cms);
 
+    EmcPose begin;
     EmcPose end;
     PM_CARTESIAN center;
     PM_CARTESIAN normal;
     int turn;
     int type;
-    double vel, ini_maxvel, acc;
+    double vel, ini_maxvel, acc, ini_maxjerk;
     int feed_mode;
 };
 
@@ -898,6 +900,18 @@ class EMC_TRAJ_CLEAR_PROBE_TRIPPED_FLAG:public EMC_TRAJ_CMD_MSG {
     void update(CMS * cms);
 };
 
+class EMC_TRAJ_END_OF_PROBE:public EMC_TRAJ_CMD_MSG {
+  public:
+        EMC_TRAJ_END_OF_PROBE():EMC_TRAJ_CMD_MSG
+        (EMC_TRAJ_END_OF_PROBE_TYPE,
+         sizeof(EMC_TRAJ_END_OF_PROBE)) {
+    };
+
+    // For internal NML/CMS use only.
+    void update(CMS * cms);
+    unsigned char probe_type;
+};
+
 class EMC_TRAJ_SET_TELEOP_ENABLE:public EMC_TRAJ_CMD_MSG {
   public:
     EMC_TRAJ_SET_TELEOP_ENABLE():EMC_TRAJ_CMD_MSG
@@ -933,9 +947,10 @@ class EMC_TRAJ_PROBE:public EMC_TRAJ_CMD_MSG {
     // For internal NML/CMS use only.
     void update(CMS * cms);
 
+    EmcPose begin;
     EmcPose pos;
     int type;
-    double vel, ini_maxvel, acc;
+    double vel, ini_maxvel, acc, ini_maxjerk;
     unsigned char probe_type;
 };
 
@@ -949,7 +964,7 @@ class EMC_TRAJ_RIGID_TAP:public EMC_TRAJ_CMD_MSG {
     void update(CMS * cms);
 
     EmcPose pos;
-    double vel, ini_maxvel, acc;
+    double vel, ini_maxvel, acc, ini_maxjerk;
 };
 
 // EMC_TRAJ status base class
@@ -984,7 +999,10 @@ class EMC_TRAJ_STAT:public EMC_TRAJ_STAT_MSG {
     int activeQueue;		// number of motions blending
     bool queueFull;		// non-zero means can't accept another motion
     int id;			// id of the currently executing motion
-    bool paused;			// non-zero means motion paused
+    int pause_state;            // non-zero means motion is paused
+    bool next_tp_reversed;      // true, if the upcoming tp commands are at reversed direction
+    bool cur_tp_reversed;       // true, if the current tp command is at reversed direction
+    bool tp_reverse_input;      // true, if the tp_reverse_input is set to reversed direction
     double scale;		// velocity scale factor
     double spindle_scale;	// spindle velocity scale factor
 
@@ -995,16 +1013,22 @@ class EMC_TRAJ_STAT:public EMC_TRAJ_STAT_MSG {
     // motions
     double maxVelocity;		// max system velocity
     double maxAcceleration;	// system acceleration
+    double maxJerk;		// system jerk
 
     EmcPose probedPosition;	// last position where probe was tripped.
-    bool probe_tripped;		// Has the probe been tripped since the last
-    // clear.
-    bool probing;		// Are we currently looking for a probe
-    // signal.
+    bool probe_tripped;		// Has the probe been tripped since the last clear.
+    bool probing;		// Are we currently looking for a probe signal.
     int probeval;		// Current value of probe input.
+
+#ifdef USB_MOTION_ENABLE
+    bool update_pos_req;        // update position request from RISC
+#endif
+
     int kinematics_type;	// identity=1,serial=2,parallel=3,custom=4
     int motion_type;
     double distance_to_go;         // in current move
+    double prim_dtg;            //!< distance_to_go of current-tc of emcmotPrimQueue
+    double prim_progress;       //!< progress of current-tc of emcmotPrimQueue
     EmcPose dtg;
     double current_vel;         // in current move
     bool feed_override_enabled;

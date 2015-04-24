@@ -119,8 +119,8 @@ int Interp::arc_data_comp_ijk(int move,  //!<either G_2 (cw arc) or G_3 (ccw arc
   CHKS((abs_err > spiral_abs_tolerance) || (rel_err > spiral_rel_tolerance),
       _("Radius to end of arc differs from radius to start: "
        "start=(%c%.4f,%c%.4f) center=(%c%.4f,%c%.4f) end=(%c%.4f,%c%.4f) r1=%.4f r2=%.4f abs_err=%.4g rel_err=%.4f%%"),
-       a, current_x, b, current_y, 
-       a, *center_x, b, *center_y, 
+       a, current_x, b, current_y,
+       a, *center_x, b, *center_y,
        a, end_x, b, end_y, arc_radius, radius2,
        abs_err, rel_err*100);
 
@@ -288,6 +288,7 @@ int Interp::arc_data_ijk(int move,       //!< either G_2 (cw arc) or G_3 (ccw ar
        a, end_x, b, end_y, radius, radius2);
   double abs_err = fabs(radius - radius2);
   double rel_err = abs_err / std::max(radius, radius2);
+<<<<<<< HEAD
   CHKS((abs_err > spiral_abs_tolerance) || (rel_err > spiral_rel_tolerance),
       _("Radius to end of arc differs from radius to start: "
        "start=(%c%.4f,%c%.4f) center=(%c%.4f,%c%.4f) end=(%c%.4f,%c%.4f) r1=%.4f r2=%.4f abs_err=%.4g rel_err=%.4f%%"),
@@ -295,6 +296,15 @@ int Interp::arc_data_ijk(int move,       //!< either G_2 (cw arc) or G_3 (ccw ar
        a, *center_x, b, *center_y, 
        a, end_x, b, end_y, radius, radius2,
        abs_err, rel_err*100);
+=======
+//  CHKS(abs_err > 100*tolerance || (abs_err > tolerance && (rel_err > .001)),
+//      _("Radius to end of arc differs from radius to start: "
+//       "start=(%c%.4f,%c%.4f) center=(%c%.4f,%c%.4f) end=(%c%.4f,%c%.4f) r1=%.4f r2=%.4f abs_err=%.4g rel_err=%.4f%% tolerance=%.4f%%"),
+//       a, current_x, b, current_y,
+//       a, *center_x, b, *center_y,
+//       a, end_x, b, end_y, radius, radius2,
+//       abs_err, rel_err*100, tolerance);
+>>>>>>> c01773447196b072f2711b0c091a44a2bd26f7b3
   if (move == G_2)
     *turn = -1 * p_number;
   else if (move == G_3)

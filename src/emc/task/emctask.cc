@@ -57,7 +57,8 @@ static char user_defined_fmt[MAX_M_DIRS][EMC_SYSTEM_CMD_LEN]; // ex: "dirname/M1
 // index to directory for each user defined function:
 static int user_defined_function_dirindex[USER_DEFINED_FUNCTION_NUM];
 
-static void user_defined_add_m_code(int num, double arg1, double arg2)
+static void user_defined_add_m_code(int num, double arg1, double arg2, double arg3,
+                                double arg4, double arg5, double arg6, double arg7)
 {
     // num      is the m_code number, typically 00-99 corresponding to M100-M199
     char fmt[EMC_SYSTEM_CMD_LEN];
@@ -67,8 +68,8 @@ static void user_defined_add_m_code(int num, double arg1, double arg2)
     //otherwise they would mix badly
     FINISH();
     strcpy(fmt, user_defined_fmt[user_defined_function_dirindex[num]]);
-    strcat(fmt, " %f %f");
-    snprintf(system_cmd.string, sizeof(system_cmd.string), fmt, num, arg1, arg2);
+    strcat(fmt, " %f %f %f %f %f %f %f");
+    snprintf(system_cmd.string, sizeof(system_cmd.string), fmt, num, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
     interp_list.append(system_cmd);
 }
 
@@ -453,6 +454,8 @@ int emcTaskPlanInit()
 	}
     }
 
+    emcTaskPlanSaveCurPos();    //!< init Interp::_setup.current_* positions
+
     if (emc_debug & EMC_DEBUG_INTERP) {
         rcs_print("emcTaskPlanInit() returned %d\n", retval);
     }
@@ -505,6 +508,65 @@ int emcTaskPlanSynch()
 
     if (emc_debug & EMC_DEBUG_INTERP) {
         rcs_print("emcTaskPlanSynch() returned %d\n", retval);
+    }
+
+    return retval;
+}
+
+/**
+ * emcTaskPlanSaveCurPos(pos): save interpreter's current positions
+ */
+int emcTaskPlanSaveCurPos()
+{
+    int retval = interp.save_cur_pos();
+
+    if (emc_debug & EMC_DEBUG_INTERP) {
+        rcs_print("emcTaskPlanSaveCurPos() returned %d\n", retval);
+    }
+
+    return retval;
+}
+
+/**
+ * emcTaskPlanRestoreCurPos(pos): restore interpreter's current positions from saved ones
+ */
+int emcTaskPlanRestoreCurPos()
+{
+    int retval = interp.restore_cur_pos();
+
+    if (emc_debug & EMC_DEBUG_INTERP) {
+        rcs_print("emcTaskPlanRestoreCurPos() returned %d\n", retval);
+    }
+
+    return retval;
+}
+
+/**
+ * emcTaskPlanGetCurPos(pos): get interpreter's current positions
+ */
+int emcTaskPlanGetCurPos(double *x, double *y, double *z, double *a, double *b, double *c, double *u, double *v, double *w)
+{
+    int retval = interp.get_cur_pos(x, y, z, a, b, c, u, v, w);
+
+    if (emc_debug & EMC_DEBUG_INTERP) {
+        rcs_print("emcTaskPlanGetCurPos() returned %d\n", retval);
+    }
+
+    return retval;
+}
+
+/**
+ * emcTaskPlanSetCurPos(pos): set interpreter's current positions from saved ones
+ *                            a NULL pointer means do not update specified position
+ *                            for example, assign (z = NULL) to prevent updating 
+ *                            interpreter's current_z
+ */
+int emcTaskPlanSetCurPos(double *x, double *y, double *z, double *a, double *b, double *c, double *u, double *v, double *w)
+{
+    int retval = interp.set_cur_pos(x, y, z, a, b, c, u, v, w);
+
+    if (emc_debug & EMC_DEBUG_INTERP) {
+        rcs_print("emcTaskPlanSetCurPos() returned %d\n", retval);
     }
 
     return retval;
@@ -599,6 +661,7 @@ int emcTaskPlanExecute(const char *command, int line_number)
     }
 
     if (emc_debug & EMC_DEBUG_INTERP) {
+        rcs_print ("%s (%s:%d) cmd(%s) line_number(%d)\n", __FILE__, __FUNCTION__, __LINE__, command, line_number);
         rcs_print("emcTaskPlanExecute(%s) returned %d\n", command, retval);
     }
 
@@ -632,6 +695,17 @@ int emcTaskPlanLine()
     
     if (emc_debug & EMC_DEBUG_INTERP) {
         rcs_print("emcTaskPlanLine() returned %d\n", retval);
+    }
+
+    return retval;
+}
+
+int emcTaskPlanToplevelLine()
+{
+    int retval = interp.toplevel_sequence_number();
+
+    if (emc_debug & EMC_DEBUG_INTERP) {
+        rcs_print("emcTaskPlanToplevelLine() returned %d\n", retval);
     }
 
     return retval;
@@ -723,3 +797,7 @@ int emcAbortCleanup(int reason, const char *message)
     return status;
 }
 
+int emcBypassFlags(void)  {
+    int status = interp.bypass_flags();
+    return status;
+}

@@ -110,12 +110,15 @@ typedef struct {
     double vLimit;		/* absolute upper limit on all vels */
 
     double aMax;        /* max accel (unused) */
+    double jMax;        /* max jerk (unused) */
     //FIXME this shouldn't be a separate limit,
     double aMaxCartesian; /* max cartesian acceleration by machine bounds */
     double aLimit;        /* max accel (unused) */
 
     double wMax;		/* rotational velocity max */
     double wDotMax;		/* rotational accelleration max */
+    double distance_to_go;      /* distance to go of current TP */
+    double progress;            /* progress of current TP */
     int nextId;
     int execId;
     struct state_tag_t execTag; /* state tag corresponding to running motion */

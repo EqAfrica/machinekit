@@ -21,9 +21,15 @@
 #include "mot_priv.h"
 #include "rtapi_math.h"
 
+<<<<<<< HEAD
 // vtable signatures
 #define VTKINS_VERSION VTKINEMATICS_VERSION1
 #define VTP_VERSION    VTTP_VERSION1
+=======
+#ifdef USB_MOTION_ENABLE        /* enable usb motion device */
+#include "sync_cmd.h"
+#endif
+>>>>>>> c01773447196b072f2711b0c091a44a2bd26f7b3
 
 // Mark strings for translation, but defer translation to userspace
 #define _(s) (s)
@@ -324,6 +330,7 @@ static int init_hal_io(void)
 	return -1;
     }
 
+<<<<<<< HEAD
     /* allocate shared memory for joint data */
     joints = hal_malloc(sizeof(emcmot_joint_t) * EMCMOT_MAX_JOINTS);
     if (joints == 0) {
@@ -334,9 +341,39 @@ static int init_hal_io(void)
 
     /* Clear joints memory */
     memset(joints, 0, sizeof(emcmot_joint_t) * EMCMOT_MAX_JOINTS);
+=======
+    // RISC_CMD REQ and ACK
+    if ((retval = hal_pin_bit_newf(HAL_IN, &(emcmot_hal_data->update_pos_req), mot_comp_id, "motion.update-pos-req")) < 0) goto error;
+    if ((retval = hal_pin_bit_newf(HAL_OUT, &(emcmot_hal_data->update_pos_ack), mot_comp_id, "motion.update-pos-ack")) < 0) goto error;
+    if ((retval = hal_pin_u32_newf(HAL_IN, &(emcmot_hal_data->rcmd_state), mot_comp_id, "motion.rcmd-state")) < 0) goto error;
+    *emcmot_hal_data->update_pos_req = 0;
+    *emcmot_hal_data->update_pos_ack = 0;
+#ifdef USB_MOTION_ENABLE
+    *emcmot_hal_data->rcmd_state = RCMD_IDLE;
+#endif // USB_MOTION_ENABLE
+
+    if ((retval = hal_pin_bit_newf(HAL_IN, &(emcmot_hal_data->usb_busy), mot_comp_id, "motion.usb-busy")) < 0) goto error;
+    if ((retval = hal_pin_bit_newf(HAL_IN, &(emcmot_hal_data->rtp_running), mot_comp_id, "motion.rtp-running")) < 0) goto error;
+    if ((retval = hal_pin_bit_newf(HAL_IN, &(emcmot_hal_data->mpg_scale_x1), mot_comp_id, "motion.mpg-scale-x1")) < 0) goto error;
+    if ((retval = hal_pin_bit_newf(HAL_IN, &(emcmot_hal_data->mpg_scale_x10), mot_comp_id, "motion.mpg-scale-x10")) < 0) goto error;
+    if ((retval = hal_pin_bit_newf(HAL_IN, &(emcmot_hal_data->mpg_scale_x100), mot_comp_id, "motion.mpg-scale-x100")) < 0) goto error;
+    *emcmot_hal_data->usb_busy = 0;
+    *emcmot_hal_data->rtp_running = 0;
+    *emcmot_hal_data->mpg_scale_x1 = 0;
+    *emcmot_hal_data->mpg_scale_x10 = 0;
+    *emcmot_hal_data->mpg_scale_x100 = 0;
+>>>>>>> c01773447196b072f2711b0c091a44a2bd26f7b3
 
     /* export machine wide hal pins */
+    if ((retval = hal_pin_bit_newf(HAL_OUT, &(emcmot_hal_data->probing), mot_comp_id, "motion.probing")) != 0) goto error;
     if ((retval = hal_pin_bit_newf(HAL_IN, &(emcmot_hal_data->probe_input), mot_comp_id, "motion.probe-input")) < 0) goto error;
+    if ((retval = hal_pin_bit_newf(HAL_IN, &(emcmot_hal_data->trigger_result), mot_comp_id, "motion.trigger-result")) != 0) goto error;
+    if ((retval = hal_pin_u32_newf(HAL_IN, &(emcmot_hal_data->trigger_din), mot_comp_id, "motion.trigger.din")) != 0) goto error;
+    if ((retval = hal_pin_u32_newf(HAL_IN, &(emcmot_hal_data->trigger_ain), mot_comp_id, "motion.trigger.ain")) != 0) goto error;
+    if ((retval = hal_pin_u32_newf(HAL_IN, &(emcmot_hal_data->trigger_type), mot_comp_id, "motion.trigger.type")) != 0) goto error;
+    if ((retval = hal_pin_bit_newf(HAL_IN, &(emcmot_hal_data->trigger_cond), mot_comp_id, "motion.trigger.cond")) != 0) goto error;
+    if ((retval = hal_pin_u32_newf(HAL_IN, &(emcmot_hal_data->trigger_level), mot_comp_id, "motion.trigger.level")) != 0) goto error;
+
     if ((retval = hal_pin_bit_newf(HAL_IO, &(emcmot_hal_data->spindle_index_enable), mot_comp_id, "motion.spindle-index-enable")) < 0) goto error;
 
     if ((retval = hal_pin_bit_newf(HAL_OUT, &(emcmot_hal_data->spindle_on), mot_comp_id, "motion.spindle-on")) < 0) goto error;
@@ -456,6 +493,10 @@ static int init_hal_io(void)
     if (retval != 0) {
 	return retval;
     }
+
+    if ((retval = hal_pin_s32_newf(HAL_OUT, &(emcmot_hal_data->motion_state), mot_comp_id, "motion.motion-state")) != 0) goto error;
+    if ((retval = hal_pin_s32_newf(HAL_OUT, &(emcmot_hal_data->motion_type), mot_comp_id, "motion.motion-type")) != 0) goto error;
+
     /* export debug parameters */
     /* these can be used to view any internal variable, simply change a line
        in control.c:output_to_hal() and recompile */
@@ -605,10 +646,15 @@ static int init_hal_io(void)
         return retval;
     }
 
+    if ((retval = hal_pin_bit_newf(HAL_IN, &(emcmot_hal_data->tp_reverse_input),
+                                   mot_comp_id, "motion.tp-reverse-input")) < 0) return retval;
+
     if ((retval = hal_pin_s32_newf(HAL_OUT, &(emcmot_hal_data->pause_state),
 				   mot_comp_id, "motion.pause-state")) < 0) return retval;
-
     // feedhold-offset related pins
+    if ((retval = hal_pin_bit_newf(HAL_IN, &(emcmot_hal_data->pause_return_path),
+                                   mot_comp_id, "motion.pause-return-path")) < 0) return retval;
+
     if ((retval = hal_pin_bit_newf(HAL_IN, &(emcmot_hal_data->pause_offset_enable),
 				   mot_comp_id, "motion.pause-offset-enable")) < 0) return retval;
 
@@ -699,7 +745,8 @@ static int init_hal_io(void)
 	/* FIXME - struct members are in a state of flux - make sure to
 	   update this - most won't need initing anyway */
 	*(joint_data->amp_enable) = 0;
-	*(joint_data->home_state) = 0;
+	*(joint_data->home_state) = HOME_IDLE;
+        *(joint_data->home_sw_id) = -1; //!< for usb_homing.c        
 	/* We'll init the index model to EXT_ENCODER_INDEX_MODEL_RAW for now,
 	   because it is always supported. */
     }
@@ -745,6 +792,11 @@ static int export_joint(int num, joint_hal_t * addr)
 	hal_pin_float_newf(HAL_OUT, &(addr->motor_offset), mot_comp_id, "axis.%d.motor-offset", num);
     if (retval != 0) {
 	return retval;
+    }
+    retval =
+        hal_pin_float_newf(HAL_IN, &(addr->blender_offset), mot_comp_id, "axis.%d.blender-offset", num);
+    if (retval != 0) {
+        return retval;
     }
     retval =
 	hal_pin_float_newf(HAL_IN, &(addr->motor_pos_fb), mot_comp_id, "axis.%d.motor-pos-fb", num);
@@ -900,6 +952,47 @@ static int export_joint(int num, joint_hal_t * addr)
         retval = hal_pin_bit_newf(HAL_IN, &(addr->is_unlocked), mot_comp_id, "axis.%d.is-unlocked", num);
         if (retval != 0) return retval;
     }
+    retval = hal_pin_float_newf(HAL_IN, &(addr->probed_pos), mot_comp_id, "axis.%d.probed-pos", num);
+    if (retval != 0) {
+        return retval;
+    }
+    
+    /* for usb_homing.c */
+    retval = hal_pin_float_newf(HAL_OUT, &(addr->risc_probe_vel), mot_comp_id, "axis.%d.risc-probe-vel", num);
+    if (retval != 0) {
+        return retval;
+    }
+    retval = hal_pin_float_newf(HAL_OUT, &(addr->risc_probe_dist), mot_comp_id, "axis.%d.risc-probe-dist", num);
+    if (retval != 0) {
+        return retval;
+    }
+    retval = hal_pin_s32_newf(HAL_OUT, &(addr->risc_probe_pin), mot_comp_id, "axis.%d.risc-probe-pin", num);
+    if (retval != 0) {
+        return retval;
+    }
+    retval = hal_pin_s32_newf(HAL_OUT, &(addr->risc_probe_type), mot_comp_id, "axis.%d.risc-probe-type", num);
+    if (retval != 0) {
+        return retval;
+    }
+    retval = hal_pin_s32_newf(HAL_IN, &(addr->home_sw_id), mot_comp_id, "axis.%d.home-sw-id", num);
+    if (retval != 0) {
+        return retval;
+    }
+    retval = hal_pin_float_newf(HAL_IN, &(addr->index_pos_pin), mot_comp_id, "axis.%d.index-pos", num);
+    if (retval != 0) {
+        return retval;
+    }
+
+    /* for usb_motion */
+    retval = hal_pin_bit_newf(HAL_IN, &(addr->usb_ferror_flag), mot_comp_id, "axis.%d.usb-ferror-flag", num);
+    if (retval != 0) {
+        return retval;
+    }
+    retval = hal_pin_float_newf(HAL_IN, &(addr->risc_pos_cmd), mot_comp_id, "axis.%d.risc-pos-cmd", num);
+    if (retval != 0) {
+        return retval;
+    }
+
     /* restore saved message level */
     rtapi_set_msg_level(msg);
     return 0;
@@ -997,6 +1090,7 @@ static int init_comm_buffers(void)
     emcmotStatus->commandEcho = 0;
     emcmotStatus->commandNumEcho = 0;
     emcmotStatus->commandStatus = 0;
+    emcmotStatus->wait_risc = 0;
 
     /* init more stuff */
 
@@ -1067,7 +1161,7 @@ static int init_comm_buffers(void)
 	}
 
 	/* init the config fields with some "reasonable" defaults" */
-
+        joint->id = joint_num;          //!< to be used for INDEX homing, usb_homing.c
 	joint->type = 0;
 	joint->max_pos_limit = 1.0;
 	joint->min_pos_limit = -1.0;
@@ -1110,19 +1204,26 @@ static int init_comm_buffers(void)
 	joint->backlash_corr = 0.0;
 	joint->backlash_filt = 0.0;
 	joint->backlash_vel = 0.0;
-	joint->motor_pos_cmd = 0.0;
+        joint->blender_offset = 0.0;
+        joint->motor_pos_cmd = 0.0;
 	joint->motor_pos_fb = 0.0;
 	joint->pos_fb = 0.0;
 	joint->ferror = 0.0;
 	joint->ferror_limit = joint->min_ferror;
 	joint->ferror_high_mark = 0.0;
 
+        /* init usb_homing info */
+        joint->risc_probe_vel = 0;
+        joint->risc_probe_dist = 0;
+        joint->risc_probe_pin = -1;
+        joint->risc_probe_type = -1;
+
 	/* init internal info */
 	cubicInit(&(joint->cubic));
 
 	/* init misc other stuff in joint structure */
 	joint->big_vel = 10.0 * joint->vel_limit;
-	joint->home_state = 0;
+	joint->home_state = HOME_IDLE;
 
 	/* init joint flags (reduntant, since flag = 0 */
 

@@ -83,17 +83,29 @@ to another.
 #include "cubic.h"		/* CUBIC_STRUCT, CUBIC_COEFF */
 #include "emcmotcfg.h"		/* EMCMOT_MAX_JOINTS */
 #include "kinematics.h"
+#include "simple_tp.h"
 #include "rtapi_limits.h"
 #include "motion_id.h"
 #include "tp.h"
 #include <stdarg.h>
 #include "state_tag.h"
 
+#include <stdint.h>
 
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+    enum pause_state {
+        PS_RUNNING=0,  // aka 'not paused'
+        PS_PAUSING=1,  // looking for the first pausable motion (e.g. not spindle-synced)
+        PS_PAUSED=2,   // motion stopped, and ok to unpause
+        PS_PAUSED_IN_OFFSET=3, // motion stopped, but not where we can return to primary queue
+        PS_JOGGING=4,  // coord mode motion in progress
+        PS_RETURNING=5, // executing a return move to return to running
+        PS_PAUSING_FOR_STEP=6,
+    };
 
     typedef struct _EMC_TELEOP_DATA {
 	EmcPose currentVel;
@@ -143,6 +155,7 @@ extern "C" {
 					   in joint space like EMCMOT_JOG_* */
 
 	EMCMOT_CLEAR_PROBE_FLAGS,	/* clears probeTripped flag */
+        EMCMOT_END_PROBE,       /* after probe*/
 	EMCMOT_PROBE,		/* go to pos, stop if probe trips, record
 				   trip pos */
 	EMCMOT_RIGID_TAP,	/* go to pos, with sync to spindle speed, 
@@ -156,7 +169,9 @@ extern "C" {
 	EMCMOT_SET_VEL_LIMIT,	/* set the max vel for all moves (tooltip) */
 	EMCMOT_SET_JOINT_VEL_LIMIT,	/* set the max joint vel */
 	EMCMOT_SET_JOINT_ACC_LIMIT,	/* set the max joint accel */
+	EMCMOT_SET_JOINT_JERK_LIMIT,	/* set the max joint jerk */
 	EMCMOT_SET_ACC,		/* set the max accel for moves (tooltip) */
+	EMCMOT_SET_JERK,	/* set the max jerk for moves (tooltip) */
 	EMCMOT_SET_TERM_COND,	/* set termination condition (stop, blend) */
 	EMCMOT_SET_NUM_AXES,	/* set the number of joints */ //FIXME-AJ: function needs to get renamed
 	EMCMOT_SET_WORLD_HOME,	/* set pose for world home */
@@ -178,6 +193,8 @@ extern "C" {
         EMCMOT_SET_OFFSET, /* set tool offsets */
         EMCMOT_SET_MAX_FEED_OVERRIDE,
         EMCMOT_SETUP_ARC_BLENDS,
+        EMCMOT_SET_AXIS_JERK_LIMIT,     /* set the max axis jerk */
+        EMCMOT_SETUP_USBMOT,            /* setup the USB-FPGA motion control parameters */
     } cmd_code_t;
 
 /* this enum lists the possible results of a command */
@@ -216,9 +233,12 @@ extern "C" {
 	double vel;		/* max velocity */
         double ini_maxvel;      /* max velocity allowed by machine
                                    constraints (the ini file) */
+        double ini_maxjerk;     /* max jerk allowed by machine
+                                   constraints (the ini file) */
         int motion_type;        /* this move is because of traverse, feed, arc, or toolchange */
         double spindlesync;     /* user units per spindle revolution, 0 = no sync */
-	double acc;		/* max acceleration */
+    	double acc;		/* max acceleration */
+    	double jerk;		/* max jerk */
 	double backlash;	/* amount of backlash */
 	int id;			/* id for motion */
 	int termCond;		/* termination condition */
@@ -256,7 +276,11 @@ extern "C" {
         hal_s32_t arcBlendGapCycles;
         double arcBlendRampFreq;
         double maxFeedScale;
+<<<<<<< HEAD
     struct state_tag_t tag;
+=======
+        int usbmotEnable;      /* enable USB-FPGA motion control device */
+>>>>>>> c01773447196b072f2711b0c091a44a2bd26f7b3
     } emcmot_command_t;
 
 /*! \todo FIXME - these packed bits might be replaced with chars
@@ -459,6 +483,9 @@ Suggestion: Split this in to an Error and a Status flag register..
 #define HOME_USE_INDEX		2
 #define HOME_IS_SHARED		4
 #define HOME_UNLOCK_FIRST       8
+/* flags for usb_homing */
+#define HOME_GANTRY_MASTER      0x10    // home_flag[4] for gantry_master(1), gantry_slave(0)
+#define HOME_GANTRY_JOINT       0x20    // home_flag[5] for gantry_master/gantry_slave:(1), others:(0)
 
 /* flags for enabling spindle scaling, feed scaling,
    adaptive feed, and feed hold */
@@ -487,6 +514,7 @@ Suggestion: Split this in to an Error and a Status flag register..
 	double min_jog_limit;
 	double vel_limit;	/* upper limit of joint speed */
 	double acc_limit;	/* upper limit of joint accel */
+	double jerk_limit;	/* upper limit of joint jerk */
 	double min_ferror;	/* zero speed following error limit */
 	double max_ferror;	/* max speed following error limit */
 	double home_search_vel;	/* dir/spd to look for home switch */
@@ -515,6 +543,8 @@ Suggestion: Split this in to an Error and a Status flag register..
 	double motor_pos_cmd;	/* commanded position, with comp */
 	double motor_pos_fb;	/* position feedback, with comp */
 	double pos_fb;		/* position feedback, comp removed */
+        double risc_pos_cmd;   /* position command issued by RISC */
+
 	double ferror;		/* following error */
 	double ferror_limit;	/* limit depends on speed */
 	double ferror_high_mark;	/* max following error */
@@ -543,6 +573,22 @@ Suggestion: Split this in to an Error and a Status flag register..
 	/* stuff moved from the other structs that might be needed (or might
 	   not!) */
 	double big_vel;		/* used for "debouncing" velocity */
+        
+        double  probed_pos;
+        
+        /**
+         * for usb_homing.c
+         **/
+        home_state_t prev_home_state;   /* state machine for homing */
+        double  risc_probe_vel; 	/* velocity for RISC probing */
+        double  risc_probe_dist;
+        int     risc_probe_pin;
+        int     risc_probe_type;
+        int     home_sw_id;
+        int     id;                     /* joint-id */
+        double  index_pos;     	 	/* motor index position in absolute motor pulse counts */
+
+	double  blender_offset;         /* offset created by realtime component, blender.comp */
     } emcmot_joint_t;
 
 /* This structure contains only the "status" data associated with
@@ -610,7 +656,11 @@ Suggestion: Split this in to an Error and a Status flag register..
 */
 
     typedef struct emcmot_status_t {
-	unsigned char head;	/* flag count for mutex detect */
+        uint32_t wait_risc;
+        uint32_t update_pos_ack;    /* for RCMD_FSM inside RISC */
+        uint32_t update_pos_req;    /* for RCMD_FSM inside RISC */
+
+        unsigned char head;	/* flag count for mutex detect */
 	/* these three are updated only when a new command is handled */
 	cmd_code_t commandEcho;	/* echo of input command */
 	int commandNumEcho;	/* echo of input command number */
@@ -673,6 +723,7 @@ Suggestion: Split this in to an Error and a Status flag register..
 	int activeDepth;	/* depth of active blend elements */
 	int queueFull;		/* Flag to indicate the tc queue is full */
 	int pause_state;	/* state of the motion pause FSM */
+	int tp_reverse_input;   //!< the hal input signal for tp_reversed mode
 	int resuming;	        /* resume operation in progress */
 	int overrideLimitMask;	/* non-zero means one or more limits ignored */
 				/* 1 << (joint-num*2) = ignore neg limit */
@@ -682,10 +733,15 @@ Suggestion: Split this in to an Error and a Status flag register..
 	/* static status-- only changes upon input commands, e.g., config */
 	double vel;		/* scalar max vel */
 	double acc;		/* scalar max accel */
+	double jerk;	        /* scalar max jerk */
+        int32_t motionState;    /* s-curve motion state */
 
 	int level;
         int motionType;
         double distance_to_go;  /* in this move */
+        double prim_dtg;        /* distance_to_go of emcmotPrimQueue */
+        double prim_progress;   //!< progress of current-tc of emcmotPrimQueue
+        char motion_type;       /* motion_type of current tc */
         EmcPose dtg;
         double current_vel;
         double requested_vel;
@@ -768,6 +824,7 @@ Suggestion: Split this in to an Error and a Status flag register..
         hal_s32_t arcBlendGapCycles;
         double arcBlendRampFreq;
         double maxFeedScale;
+        int usbmotEnable;       /* enable usb based motion control device */
     } emcmot_config_t;
 
 /*********************************
@@ -810,6 +867,10 @@ Suggestion: Split this in to an Error and a Status flag register..
     extern int emcmotErrorPutfv(emcmot_error_t * errlog, const char *fmt, va_list ap);
     extern int emcmotErrorPutf(emcmot_error_t * errlog, const char *fmt, ...);
     extern int emcmotErrorGet(emcmot_error_t * errlog, char *error);
+
+    enum tp_dir_state { TP_FORWARD=0,
+                        TP_REVERSE=1
+    };
 
 #ifdef __cplusplus
 }

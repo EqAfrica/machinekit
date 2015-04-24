@@ -73,18 +73,24 @@ public:
     char *file_name(char *buf, size_t buflen);
     size_t line_length();
     int sequence_number();
+    int toplevel_sequence_number();
     int ini_load(const char *inifile);
     int init();
     int execute();
     int execute(const char *line);
     int execute(const char *line, int line_number);
     int synch();
+    int save_cur_pos();
+    int restore_cur_pos();
+    int get_cur_pos(double *x, double *y, double *z, double *a, double *b, double *c, double *u, double *v, double *w);
+    int set_cur_pos(double *x, double *y, double *z, double *a, double *b, double *c, double *u, double *v, double *w);
     int exit();
     int open(const char *filename);
     int read();
     int read(const char *line);
     int close();
     int reset();
+    int bypass_flags();
     int line();
     int call_level();
     char *command(char *buf, size_t buflen);
@@ -561,17 +567,17 @@ int Canterp::execute(const char *line) {
     }
 
     if (!strcmp(the_command_name, "START_SPINDLE_CLOCKWISE")) {
-	START_SPINDLE_CLOCKWISE();
+	START_SPINDLE_CLOCKWISE(ln);
 	return 0;
     }
 
     if (!strcmp(the_command_name, "START_SPINDLE_COUNTERCLOCKWISE")) {
-	START_SPINDLE_COUNTERCLOCKWISE();
+	START_SPINDLE_COUNTERCLOCKWISE(ln);
 	return 0;
     }
 
     if (!strcmp(the_command_name, "STOP_SPINDLE_TURNING")) {
-	STOP_SPINDLE_TURNING();
+	STOP_SPINDLE_TURNING(ln);
 	return 0;
     }
 
@@ -657,7 +663,7 @@ int Canterp::execute(const char *line) {
     }
 
     if (!strcmp(the_command_name, "TURN_PROBE_OFF")) {
-	TURN_PROBE_OFF();
+	TURN_PROBE_OFF(0);      // force probe_type as 0, enabling probe error handeling
 	return 0;
     }
 
@@ -692,7 +698,12 @@ int Canterp::close() {
 
 int Canterp::exit() { return 0; }
 int Canterp::synch() { return 0; }
+int Canterp::save_cur_pos() { return 0; }
+int Canterp::restore_cur_pos() { return 0; }
+int Canterp::get_cur_pos(double *x, double *y, double *z, double *a, double *b, double *c, double *u, double *v, double *w) { return 0; }
+int Canterp::set_cur_pos(double *x, double *y, double *z, double *a, double *b, double *c, double *u, double *v, double *w) { return 0; }
 int Canterp::reset() { return 0; }
+int Canterp::bypass_flags() { return 0; }
 int Canterp::line() { return 0; }
 int Canterp::call_level() { return 0; }
 
@@ -722,6 +733,9 @@ size_t Canterp::line_length() {
    return 0;
 }
 int Canterp::sequence_number() {
+   return -1;
+}
+int Canterp::toplevel_sequence_number() {
    return -1;
 }
 int Canterp::init() { return INTERP_OK; }

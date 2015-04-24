@@ -18,6 +18,7 @@ extern "C" {
 #include <stdlib.h>		/* malloc() */
 #include <string.h>		/* memcpy() */
 #include <stdio.h>		/* fprintf(), stderr */
+#include <assert.h>
 #ifdef __cplusplus
 }
 #endif
@@ -39,6 +40,8 @@ LinkedList::LinkedList()
     head = (LinkedListNode *) NULL;
     tail = (LinkedListNode *) NULL;
     current_node = (LinkedListNode *) NULL;
+    hit_bol = false;
+    hit_eol = false;
     extra_node = (LinkedListNode *) NULL;
     last_data_retrieved = NULL;
     last_size_retrieved = 0;
@@ -107,8 +110,11 @@ void LinkedList::flush_list()
 	    last_size_retrieved = 0;
 	}
     }
+    current_node = (LinkedListNode *) NULL;
     head = (LinkedListNode *) NULL;
     tail = (LinkedListNode *) NULL;
+    hit_eol = false;
+    hit_bol = false;
     list_size = 0;
     last_data_stored = NULL;
     last_size_stored = 0;
@@ -138,6 +144,9 @@ void *LinkedList::retrieve_head()
 	last_size_retrieved = head->size;
 	last_copied_retrieved = head->copied;
 	next_node = head->next;
+	if (current_node == head) {
+	    current_node = next_node;
+	}
 	delete head;
 	head = next_node;
 	if (NULL != head) {
@@ -167,6 +176,9 @@ void *LinkedList::retrieve_tail()
 	last_size_retrieved = tail->size;
 	last_copied_retrieved = tail->copied;
 	last_node = tail->last;
+        if (current_node == tail) {
+            current_node = last_node;
+        }
 	delete tail;
 	tail = last_node;
 	if (NULL != tail) {
@@ -248,11 +260,18 @@ int LinkedList::store_at_head(void *_data, size_t _size, int _copy)
 		return (-1);
 	    }
 	    tail = new_head;
+	    hit_eol = false;
+	    hit_bol = false;
+	    current_node = head;
 	} else {
 	    head->last = new_head;
 	    new_head->last = (LinkedListNode *) NULL;
 	    new_head->next = head;
 	    head = new_head;
+	    if ((NULL == current_node) && (true == hit_bol)) {
+	        current_node = head;
+	        hit_bol = false;
+	    }
 	}
 	list_size++;
 	return (head->id);
@@ -283,7 +302,7 @@ int LinkedList::store_at_tail(void *_data, size_t _size, int _copy)
     LinkedListNode *old_head = head;
 
     if (list_size >= max_list_size) {
-	switch (sizing_mode) {
+        switch (sizing_mode) {
 	case DELETE_FROM_HEAD:
 	    if (NULL != head) {
 		head = head->next;
@@ -331,12 +350,21 @@ int LinkedList::store_at_tail(void *_data, size_t _size, int _copy)
 			"LinkedList: Tail is NULL but head is not.\n");
 		return (-1);
 	    }
+	    // add new node to an empty list
 	    head = new_tail;
+	    current_node = head;
+	    hit_eol = false;
+	    hit_bol = false;
 	} else {
 	    tail->next = new_tail;
 	    new_tail->last = tail;
 	    new_tail->next = (LinkedListNode *) NULL;
 	    tail = new_tail;
+	    if ((NULL == current_node) && (true == hit_eol)) {
+	        // current_node could be NULL by get_next()
+	        current_node = new_tail;
+	        hit_eol = false;
+	    }
 	}
 	list_size++;
 	return (tail->id);
@@ -596,9 +624,13 @@ void *LinkedList::get_head()
 {
     current_node = head;
     if (NULL != current_node) {
-	return (current_node->data);
+        hit_bol = false; // reset hit begin of list
+        hit_eol = false; // reset hit end of list
+        return (current_node->data);
     } else {
-	return (NULL);
+        hit_bol = true; // reset hit begin of list
+        hit_eol = true; // reset hit end of list
+        return (NULL);
     }
 }
 
@@ -611,9 +643,13 @@ void *LinkedList::get_tail()
 {
     current_node = tail;
     if (NULL != current_node) {
-	return (current_node->data);
+        hit_bol = false; // reset hit begin of list
+        hit_eol = false; // reset hit end of list
+        return (current_node->data);
     } else {
-	return (NULL);
+        hit_bol = true; // reset hit begin of list
+        hit_eol = true; // reset hit end of list
+        return (NULL);
     }
 }
 
@@ -626,10 +662,16 @@ void *LinkedList::get_next()
 {
     if (NULL != current_node) {
 	current_node = current_node->next;
+    } if (hit_bol == true) {
+        if (NULL != head) {
+            current_node = head;
+            hit_bol = false;
+        }
     }
     if (NULL != current_node) {
 	return (current_node->data);
     } else {
+        hit_eol = true;
 	return (NULL);
     }
 }
@@ -642,12 +684,29 @@ void *LinkedList::get_next()
 void *LinkedList::get_last()
 {
     if (NULL != current_node) {
-	current_node = current_node->last;
+        current_node = current_node->last;
+    } else if (hit_eol == true) {
+        // point current_node to TAIL if we are at EOL (end of linklist)
+        if (NULL != tail) {
+            current_node = tail;
+            hit_eol = false;
+        }
     }
     if (NULL != current_node) {
 	return (current_node->data);
     } else {
+        hit_bol = true; // hit begin of list
 	return (NULL);
+    }
+}
+
+/* Get the address of the current_node object on the list. */
+void *LinkedList::get_current()
+{
+    if (NULL != current_node) {
+        return (current_node->data);
+    } else {
+        return (NULL);
     }
 }
 
@@ -660,17 +719,28 @@ bool LinkedList::is_empty()
     }
 }
 
+bool LinkedList::is_eol()
+{
+    return (hit_eol);
+}
+
+bool LinkedList::is_bol()
+{
+    return (hit_bol);
+}
+
 void *LinkedList::get_by_id(int _id)
 {
-    LinkedListNode *temp;
-
-    temp = head;
-    while (NULL != temp) {
-	if (temp->id == _id) {
-	    return (temp->data);
+    current_node = head;
+    hit_bol = (NULL == current_node);
+    while (NULL != current_node) {
+	if (current_node->id == _id) {
+	    hit_eol = false;
+	    return (current_node->data);
 	}
-	temp = temp->next;
+	current_node = current_node->next;
     }
+    hit_eol = true;
     return (NULL);
 }
 
@@ -771,9 +841,22 @@ void LinkedList::delete_current_node()
 int LinkedList::get_current_id()
 {
     if (current_node == NULL) {
-	return (-1);
+	return (next_node_id);  //!< return a non-exist-id if there's no current_node
+    } else {
+        return (current_node->id);
     }
-    return (current_node->id);
+}
+
+void LinkedList::get_state(bool * bol, bool * eol)
+{
+    *bol = hit_bol;
+    *eol = hit_eol;
+}
+
+void LinkedList::set_state(bool * bol, bool * eol)
+{
+    hit_bol = *bol;
+    hit_eol = *eol;
 }
 
 // Constructor defined private to prevent copying.

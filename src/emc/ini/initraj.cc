@@ -63,6 +63,7 @@ static int loadTraj(EmcIniFile *trajInifile)
     EmcAngularUnits angularUnits;
     double vel;
     double acc;
+    double jerk;
     unsigned char coordinateMark[6] = { 1, 1, 1, 0, 0, 0 };
     int t;
     int len;
@@ -163,6 +164,28 @@ static int loadTraj(EmcIniFile *trajInifile)
         }
         old_inihal_data.traj_max_acceleration = acc;
 
+
+        // has to set MAX_* before DEFAULT_*
+        jerk = 1e99;
+        trajInifile->Find(&jerk, "MAX_JERK", "TRAJ");
+        if (0 != emcTrajSetMaxJerk(jerk)) {
+            if (emc_debug & EMC_DEBUG_CONFIG) {
+                rcs_print("bad return value from emcTrajSetMaxJerk\n");
+            }
+            return -1;
+        }
+        old_inihal_data.traj_default_jerk = jerk;
+
+        jerk = 1e99;
+        trajInifile->Find(&jerk, "DEFAULT_JERK", "TRAJ");
+        if (0 != emcTrajSetJerk(jerk)) {
+            if (emc_debug & EMC_DEBUG_CONFIG) {
+                rcs_print("bad return value from emcTrajSetJerk\n");
+            }
+            return -1;
+        }
+        old_inihal_data.traj_max_jerk = jerk;
+
         int arcBlendEnable = 1;
         int arcBlendFallbackEnable = 0;
         int arcBlendOptDepth = 50;
@@ -181,7 +204,16 @@ static int loadTraj(EmcIniFile *trajInifile)
                 rcs_print("bad return value from emcSetupArcBlends\n");
             }
             return -1;
-        } 
+        }
+
+        int usbmotEnable = 0;
+        trajInifile->Find(&usbmotEnable, "USB_MOTION_ENABLE", "TRAJ");
+        if (0 != emcSetupUsbMot(usbmotEnable)) {
+            if (emc_debug & EMC_DEBUG_CONFIG) {
+                rcs_print("bad return value from emcSetupUsbMot\n");
+            }
+            return -1;
+        }
 
         double maxFeedScale = 1.0;
         trajInifile->Find(&maxFeedScale, "MAX_FEED_OVERRIDE", "DISPLAY");

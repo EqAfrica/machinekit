@@ -46,13 +46,14 @@ class LinkedListNode {
 
 class LinkedList {
   protected:
-    LinkedListNode * head;
+    LinkedListNode *head;
     LinkedListNode *tail;
     LinkedListNode *current_node;
     LinkedListNode *extra_node;
     int next_node_id;
+    bool hit_bol;
+    bool hit_eol;
   public:
-    int get_current_id();
     int list_size;
     int max_list_size;
     LIST_SIZING_MODE sizing_mode;
@@ -77,13 +78,19 @@ class LinkedList {
     void *get_tail();
     void *get_next();
     void *get_last();
+    void *get_current();
     void *find_node(int _node_number);
     void delete_node(int _id);
     void delete_current_node();
+    int  get_current_id();
     void *get_by_id(int _id);
     void *get_first_newer(int _id);
     void *get_last_newer(int _id);
+    void get_state(bool * bol, bool * eol);
+    void set_state(bool * bol, bool * eol);
     bool is_empty();
+    bool is_eol();
+    bool is_bol();
     void flush_list();
     void delete_members();
 

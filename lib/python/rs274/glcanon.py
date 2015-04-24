@@ -24,6 +24,8 @@ import linuxcnc
 import array
 import gcode
 
+from numpy import linalg as LA
+
 def minmax(*args):
     return min(*args), max(*args)
 
@@ -41,14 +43,26 @@ limiticon = array.array('B',
 class GLCanon(Translated, ArcsToSegmentsMixin):
     lineno = -1
     def __init__(self, colors, geometry, is_foam=0):
+        self.path = []
         # traverse list - [line number, [start position], [end position], [tlo x, tlo y, tlo z]]
         self.traverse = []; self.traverse_append = self.traverse.append
         # feed list - [line number, [start position], [end position], feedrate, [tlo x, tlo y, tlo z]]
         self.feed = []; self.feed_append = self.feed.append
+        # feed info list - [line number, [start position], [end position], length]
+        self.feed_info = []; self.feed_info_append = self.feed_info.append
+        # all_traverse list - [line number , [start position], [end position], feedrate, length]
+        self.all_traverse = []; self.all_traverse_append = self.all_traverse.append
         # arcfeed list - [line number, [start position], [end position], feedrate, [tlo x, tlo y, tlo z]]
         self.arcfeed = []; self.arcfeed_append = self.arcfeed.append
+        # arc info list - [line number, [c_x,c_y], [s_x, s_y], [e_x, e_y], length, cw]
+        self.arc_info = []; self.arc_info_append = self.arc_info.append
         # dwell list - [line number, color, pos x, pos y, pos z, plane]
         self.dwells = []; self.dwells_append = self.dwells.append
+        # block path list - [start line, [start position], feedrate]
+        self.blocks = []; self.blocks_append = self.blocks.append
+        self.block_pos = []
+        self.block_feed = 0
+        self.highlight_mode = 'line'
         self.choice = None
         self.feedrate = 1
         self.lo = (0,) * 9
@@ -82,12 +96,15 @@ class GLCanon(Translated, ArcsToSegmentsMixin):
         self.g5x_offset_u = 0.0
         self.g5x_offset_v = 0.0
         self.g5x_offset_w = 0.0
+        self.diff = [0.0, 0.0, 0.0, 0.0]
+        self.prev_diff = [0.0, 0.0, 0.0, 0.0]
         self.is_foam = is_foam
         self.foam_z = 0
         self.foam_w = 1.5
         self.notify = 0
         self.notify_message = ""
         self.highlight_line = None
+        self.pierce = 0
 
     def comment(self, arg):
         if arg.startswith("AXIS,"):
@@ -125,6 +142,7 @@ class GLCanon(Translated, ArcsToSegmentsMixin):
     def next_line(self, st):
         self.state = st
         self.lineno = self.state.sequence_number
+        self.call_level = self.state.call_level
 
     def draw_lines(self, lines, for_selection, j=0, geometry=None):
         return linuxcnc.draw_lines(geometry or self.geometry, lines, for_selection)
@@ -187,8 +205,19 @@ class GLCanon(Translated, ArcsToSegmentsMixin):
     def straight_traverse(self, x,y,z, a,b,c, u, v, w):
         if self.suppress > 0: return
         l = self.rotate_and_translate(x,y,z,a,b,c,u,v,w)
+        # calculate length
+        length_vector = []
+        length = 0.0
+        for i in range (0, (len(l)-1)):
+            length_vector.append(l[i] - self.lo[i])
+        length = LA.norm(length_vector)
+        
         if not self.first_move:
                 self.traverse_append((self.lineno, self.lo, l, [self.xo, self.yo, self.zo]))
+        
+        self.traverse_append((self.lineno, self.lo, l, [self.xo, self.yo, self.zo]))
+        self.all_traverse_append([self.lineno, self.lo, l, self.feedrate, length])
+
         self.lo = l
 
     def rigid_tap(self, x, y, z):
@@ -217,17 +246,43 @@ class GLCanon(Translated, ArcsToSegmentsMixin):
         feedrate = self.feedrate
         to = [self.xo, self.yo, self.zo]
         append = self.arcfeed_append
+        # calculate length
+        length_vector = []
+        length = 0.0
+
         for l in segs:
             append((lineno, lo, l, feedrate, to))
+            # calculate the length from lo to l
+            for i in range (0, (len(l)-1)):
+                length_vector.append(l[i] - lo[i])
+            length = length + LA.norm(length_vector)
+            length_vector = []
             lo = l
+        # print "arc length is", length  
+        
         self.lo = lo
+        self.arc_info_append([lineno,[0.0],0,0,length,0])
+        if (self.call_level == 0):
+            self.path.append(('arc', lineno,[0.0],0,[0],length))
 
     def straight_feed(self, x,y,z, a,b,c, u, v, w):
         if self.suppress > 0: return
         self.first_move = False
         l = self.rotate_and_translate(x,y,z,a,b,c,u,v,w)
         self.feed_append((self.lineno, self.lo, l, self.feedrate, [self.xo, self.yo, self.zo]))
+        
+        # calculate length
+        length_vector = []
+        length = 0.0
+        for i in range (0, (len(l)-1)):
+            length_vector.append(l[i] - self.lo[i])
+        length = LA.norm(length_vector)
+        
         self.lo = l
+        self.feed_info_append((self.lineno, self.lo, l, self.feedrate, [self.xo, self.yo, self.zo], length))
+        if (self.call_level == 0):
+            self.path.append(('feed', self.lineno, self.lo, l, self.feedrate, [self.xo, self.yo, self.zo], length))
+
     straight_probe = straight_feed
 
     def user_defined_function(self, i, p, q):
@@ -241,7 +296,55 @@ class GLCanon(Translated, ArcsToSegmentsMixin):
         color = self.colors['dwell']
         self.dwells_append((self.lineno, color, self.lo[0], self.lo[1], self.lo[2], self.state.plane/10-17))
 
+    def stop_spindle_turning(self, arg):
+        # M5
+        if self.suppress > 0: return
+        self.block_pos = self.lo # None # self.lo # we should record next feed (arcfeed or traverse) 
+        self.blocks_append((self.lineno, self.block_pos,self.block_feed))
+        self.block_pos = []
+        self.pierce += 1
 
+    def get_last_pos_of_prog(self):
+        if len(self.all_traverse) > 0: 
+            last_traverse = self.all_traverse[len(self.all_traverse)-1]
+            traverse_line = last_traverse[0] 
+        else:
+            traverse_line = None 
+            last_traverse = None
+        if len(self.feed) > 0:
+            feed_line = self.feed[len(self.feed)-1][0]
+        else:
+            feed_line = None
+        if len(self.arcfeed) > 0:
+            arcfeed_line = self.arcfeed[len(self.arcfeed)-1][0]
+        else:
+            arcfeed_line = None
+        if arcfeed_line is None:
+            arcfeed_line = min((arcfeed_line,feed_line,traverse_line))
+        if feed_line is None:
+            feed_line = min((arcfeed_line,feed_line,traverse_line))
+        if traverse_line is None:
+            traverse_line = min((arcfeed_line,feed_line,traverse_line))
+        if feed_line >= max((traverse_line, arcfeed_line)):
+            index = len(self.feed) - 1
+            return self.feed[index][2][:3],self.feed[index][3]
+        if arcfeed_line >= max((traverse_line, feed_line)):
+            index = len(self.arcfeed)- 1
+            return self.arcfeed[index][2][:3],self.arcfeed[index][3]
+        if traverse_line >= max((arcfeed_line, feed_line)):
+            feedrate = last_traverse[3]
+            return last_traverse[2][:3], feedrate
+
+    def set_highlight_mode(self, mode=None):
+        if mode is None:
+            self.highlight_mode = 'line'
+            return
+        mode = mode.lower()
+        if mode == "block":
+            self.highlight_mode = 'block'
+        else:
+            self.highlight_mode = 'line'
+            
     def highlight(self, lineno, geometry):
         glLineWidth(3)
         c = self.colors['selected']
@@ -381,6 +484,7 @@ class GlCanonDraw:
         self.select_buffer_size = 100
         self.cached_tool = -1
         self.initialised = 0
+        self.fix_tool_size = False  # set to True to disable tool_size scaling
 
     def realize(self):
         self.hershey = hershey.Hershey()
@@ -405,6 +509,7 @@ class GlCanonDraw:
         glLoadIdentity()
 
     def select(self, x, y):
+        selected_line = 0
         if self.canon is None: return
         pmatrix = glGetDoublev(GL_PROJECTION_MATRIX)
         glMatrixMode(GL_PROJECTION)
@@ -435,13 +540,18 @@ class GlCanonDraw:
         if buffer:
             min_depth, max_depth, names = min(buffer)
             self.set_highlight_line(names[0])
+            if self.canon.highlight_mode is 'block':
+                selected_line = self.canon.selected_block
+            else:
+                selected_line = int(names[0])
         else:
             self.set_highlight_line(None)
+            selected_line = None
 
         glMatrixMode(GL_PROJECTION)
         glPopMatrix()
         glMatrixMode(GL_MODELVIEW)
-
+        return selected_line
     def dlist(self, name, n=1, gen=lambda n: None):
         if name not in self._dlists:
             base = glGenLists(n)
@@ -1015,6 +1125,38 @@ class GlCanonDraw:
                 glCallList(alist)
             glPopMatrix()
 
+        try:
+            if self.draw_material():
+                pos_2, pos_3, pos_0, pos_1 = self.get_material_dimension()
+                # if pos_2 is not None and pos_3 is not None and pos_0 is\
+                #  not None and pos_1 is not None:
+                if pos_2 is None:
+#                     print "PLATEVIEW: trying to draw but position doesn't assigned"
+#                     print 'pos2 is None'
+                    pass
+                else:
+#                     print 'PLATEVIEW: drawing gl for plateview'
+#                     print 'x0(%f) y0(%f)' % (pos_0[0], pos_0[1])
+#                     print 'x1(%f) y1(%f)' % (pos_1[0], pos_1[1])
+#                     print 'x2(%f) y2(%f)' % (pos_2[0], pos_2[1])
+#                     print 'x3(%f) y3(%f)' % (pos_3[0], pos_3[1])
+                    glDisable(GL_DEPTH_TEST)
+                    glEnable(GL_BLEND)
+                    glLineWidth(10)
+                    glColor3f(0.4,0.4,0.2)
+                    # glColor3f(0.5,1.0,0.2)
+                    glBegin(GL_QUADS)
+                    glVertex3f(pos_2[0], pos_2[1],0)
+                    glVertex3f(pos_3[0], pos_3[1],0)
+                    glVertex3f(pos_0[0], pos_0[1],0)
+                    glVertex3f(pos_1[0], pos_1[1],0)
+
+                    glEnd()
+                    glEnable(GL_DEPTH_TEST)
+                    glDisable(GL_BLEND)
+        except:
+            pass
+
         if self.get_show_limits():
             glLineWidth(1)
             glColor3f(1.0,0.0,0.0)
@@ -1230,10 +1372,16 @@ class GlCanonDraw:
             if self.is_lathe():
                 glRotatef(90, 0, 1, 0)
             else:
-                dia = current_tool.diameter
+                if self.fix_tool_size == True:
+                    # self.distance: the distance to your eye (unit: mm)
+                    dia = 4 * math.sqrt((self.distance / 10))
+                    if (self.get_show_metric() == False):
+                        dia = dia/25.4
+                else:
+                    dia = current_tool.diameter 
                 r = self.to_internal_linear_unit(dia) / 2.
                 q = gluNewQuadric()
-                glEnable(GL_LIGHTING)
+#                 glEnable(GL_LIGHTING)
                 gluCylinder(q, r, r, 8*r, 32, 1)
                 glPushMatrix()
                 glRotatef(180, 1, 0, 0)
@@ -1241,7 +1389,7 @@ class GlCanonDraw:
                 glPopMatrix()
                 glTranslatef(0,0,8*r)
                 gluDisk(q, 0, r, 32, 1)
-                glDisable(GL_LIGHTING)
+#                 glDisable(GL_LIGHTING)
                 gluDeleteQuadric(q)
         glEndList()
 

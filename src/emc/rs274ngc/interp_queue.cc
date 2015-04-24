@@ -151,37 +151,40 @@ void enqueue_FLOOD_OFF(void) {
     qc().push_back(q);
 }
 
-void enqueue_START_SPINDLE_CLOCKWISE(void) {
+void enqueue_START_SPINDLE_CLOCKWISE(int line) {
     if(qc().empty()) {
         if(debug_qc) printf("immediate spindle clockwise\n");
-        START_SPINDLE_CLOCKWISE();
+        START_SPINDLE_CLOCKWISE(line);
         return;
     }
     queued_canon q;
+    q.data.set_spindle_dir.line_number = line;
     q.type = QSTART_SPINDLE_CLOCKWISE;
     if(debug_qc) printf("enqueue spindle clockwise\n");
     qc().push_back(q);
 }
 
-void enqueue_START_SPINDLE_COUNTERCLOCKWISE(void) {
+void enqueue_START_SPINDLE_COUNTERCLOCKWISE(int line) {
     if(qc().empty()) {
         if(debug_qc) printf("immediate spindle counterclockwise\n");
-        START_SPINDLE_COUNTERCLOCKWISE();
+        START_SPINDLE_COUNTERCLOCKWISE(line);
         return;
     }
     queued_canon q;
+    q.data.set_spindle_dir.line_number = line;
     q.type = QSTART_SPINDLE_COUNTERCLOCKWISE;
     if(debug_qc) printf("enqueue spindle counterclockwise\n");
     qc().push_back(q);
 }
 
-void enqueue_STOP_SPINDLE_TURNING(void) {
+void enqueue_STOP_SPINDLE_TURNING(int l) {
     if(qc().empty()) {
         if(debug_qc) printf("immediate spindle stop\n");
-        STOP_SPINDLE_TURNING();
+        STOP_SPINDLE_TURNING(l);
         return;
     }
     queued_canon q;
+    q.data.set_spindle_dir.line_number = l;
     q.type = QSTOP_SPINDLE_TURNING;
     if(debug_qc) printf("enqueue spindle stop\n");
     qc().push_back(q);
@@ -360,11 +363,13 @@ void enqueue_ARC_FEED(setup_pointer settings, int l,
     qc().push_back(q);
 }
 
-void enqueue_M_USER_COMMAND (int index, double p_number, double q_number) {
+void enqueue_M_USER_COMMAND (int index, double p_number, double q_number,
+                            double r_number, double s_number, double j_number ,
+                            double k_number, double l_number) {
     if(qc().empty()) {
-        if(debug_qc) printf("immediate M_USER_COMMAND index=%d p=%f q=%f\n",
-                           index,p_number,q_number);
-        (*(USER_DEFINED_FUNCTION[index - 100])) (index - 100,p_number,q_number);
+        if(debug_qc) printf("immediate M_USER_COMMAND index=%d p=%f q=%f r=%f s=%f j=%f k=%f l=%f \n",
+                           index,p_number,q_number, r_number, s_number, j_number, k_number, l_number);
+        (*(USER_DEFINED_FUNCTION[index - 100])) (index - 100,p_number,q_number,r_number,s_number,j_number,k_number, l_number);
         return;
     }
     queued_canon q;
@@ -372,8 +377,9 @@ void enqueue_M_USER_COMMAND (int index, double p_number, double q_number) {
     q.data.mcommand.index    = index;
     q.data.mcommand.p_number = p_number;
     q.data.mcommand.q_number = q_number;
-    if(debug_qc) printf("enqueue M_USER_COMMAND index=%d p=%f q=%f\n",
-                        index,p_number,q_number);
+    q.data.mcommand.l_number = l_number;
+    if(debug_qc) printf("enqueue M_USER_COMMAND index=%d p=%f q=%f r=%f s=%f j=%f k=%f l=%f\n",
+                        index,p_number,q_number,r_number,s_number,j_number,k_number,l_number);
     qc().push_back(q);
 }
 
@@ -504,15 +510,15 @@ void dequeue_canons(setup_pointer settings) {
             break;
         case QSTART_SPINDLE_CLOCKWISE:
             if(debug_qc) printf("issuing spindle clockwise\n");
-            START_SPINDLE_CLOCKWISE();
+            START_SPINDLE_CLOCKWISE(q.data.set_spindle_dir.line_number);
             break;
         case QSTART_SPINDLE_COUNTERCLOCKWISE:
             if(debug_qc) printf("issuing spindle counterclockwise\n");
-            START_SPINDLE_COUNTERCLOCKWISE();
+            START_SPINDLE_COUNTERCLOCKWISE(q.data.set_spindle_dir.line_number);
             break;
         case QSTOP_SPINDLE_TURNING:
             if(debug_qc) printf("issuing stop spindle\n");
-            STOP_SPINDLE_TURNING();
+            STOP_SPINDLE_TURNING(q.data.set_spindle_dir.line_number);
             break;
         case QSET_SPINDLE_MODE:
             if(debug_qc) printf("issuing set spindle mode\n");
@@ -532,7 +538,12 @@ void dequeue_canons(setup_pointer settings) {
             {int index=q.data.mcommand.index;
               (*(USER_DEFINED_FUNCTION[index - 100])) (index -100,
                                                     q.data.mcommand.p_number,
-                                                    q.data.mcommand.q_number);
+                                                    q.data.mcommand.q_number,
+                                                    q.data.mcommand.r_number,
+                                                    q.data.mcommand.s_number,
+                                                    q.data.mcommand.j_number,
+                                                    q.data.mcommand.k_number,
+                                                    q.data.mcommand.l_number);
             }
             break;
 	case QSTART_CHANGE:

@@ -57,6 +57,9 @@ public:
 // reset yourself
  int reset();
 
+ // reset probe_flag and toolchange_flag while bypassing a line
+ int bypass_flags();
+
 // restore interpreter variables from a file
  int restore_parameters(const char *filename);
 
@@ -66,6 +69,15 @@ public:
 
 // synchronize your internal model with the external world
  int synch();
+
+// save internal current_* positions
+ int save_cur_pos();
+
+// restore internal current_* positions from saved ones
+ int restore_cur_pos();
+
+ int get_cur_pos(double *x, double *y, double *z, double *a, double *b, double *c, double *u, double *v, double *w);
+ int set_cur_pos(double *x, double *y, double *z, double *a, double *b, double *c, double *u, double *v, double *w);
 
 /* Interface functions to call to get information from the interpreter.
    If a function has a return value, the return value contains the information.
@@ -108,6 +120,9 @@ public:
 
 // return the current sequence number (how many lines read)
  int sequence_number();
+
+// return the toplevel sequence number (how many lines read) before REMAP/SUB-CALL
+ int toplevel_sequence_number();
 
 // copy the function name from the stack_index'th position of the
 // function call stack at the time of the most recent error into

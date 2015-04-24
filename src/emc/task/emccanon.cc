@@ -42,13 +42,22 @@
 #include "canon_position.hh"		// data type for a machine position
 #include "interpl.hh"		// interp_list
 #include "emcglb.h"		// TRAJ_MAX_VELOCITY
+<<<<<<< HEAD
 #include "modal_state.hh"
+=======
+#include <assert.h>
+>>>>>>> c01773447196b072f2711b0c091a44a2bd26f7b3
 
 //#define EMCCANON_DEBUG
 
 //Simple compile-time debug macro
 #ifdef EMCCANON_DEBUG
-#define canon_debug(...) printf(__VA_ARGS__)
+#define canon_debug(fmt, args...)                                       \
+    do {                                                                \
+        printf("%s: (%s:%d) ",                                          \
+                         __FILE__, __FUNCTION__, __LINE__ );            \
+        printf(fmt, ##args);                                            \
+    } while (0)
 #else
 #define canon_debug(...)
 #endif
@@ -58,6 +67,7 @@ static double css_maximum, css_numerator; // both always positive
 static int spindle_dir = 0;
 
 static const double tiny = 1e-7;
+static const double huge = 1e9;
 static double xy_rotation = 0.;
 static int rotary_unlock_for_traverse = -1;
 
@@ -74,6 +84,10 @@ void UPDATE_TAG(StateTag tag) {
 
 #ifndef MIN3
 #define MIN3(a,b,c) (MIN(MIN((a),(b)),(c)))
+#endif
+
+#ifndef MIN4
+#define MIN4(a,b,c,d) (MIN(MIN((a),(b)),MIN((c),(d))))
 #endif
 
 #ifndef MAX
@@ -448,6 +462,20 @@ void CANON_UPDATE_END_POINT(double x, double y, double z,
 			FROM_PROG_LEN(u),FROM_PROG_LEN(v),FROM_PROG_LEN(w));
 }
 
+/**
+ * External call from Interpreter to update the canon end point.
+ * Called by Interp::set_cur_pos(),
+ * input positions are program-positions,
+ * which may be in INCH/MM format, and without offset nor rotation.
+ **/
+void INTERP_UPDATE_END_POINT(double x, double y, double z,
+                             double a, double b, double c,
+                             double u, double v, double w)
+{
+    from_prog(x, y, z, a, b, c, u, v, w);               // convert to CANON internal unit: mm
+    rotate_and_offset_pos(x, y, z, a, b, c, u, v, w);   // CANON internal unit
+    canonUpdateEndPoint(x, y, z, a, b, c, u, v, w);
+}
 
 /* motion control mode is used to signify blended v. stop-at-end moves.
    Set to 0 (invalid) at start, so first call will send command out */
@@ -615,11 +643,112 @@ void SET_FEED_REFERENCE(CANON_FEED_REFERENCE reference)
     // nothing need be done here
 }
 
+<<<<<<< HEAD
 /**
  * Get the limiting acceleration for a displacement from the current position to the given position.
  * returns a single acceleration that is the minimum of all axis accelerations.
  */
 static AccelData getStraightAcceleration(double x, double y, double z,
+=======
+double getStraightJerk(double x, double y, double z,
+                               double a, double b, double c,
+                               double u, double v, double w)
+{
+    double dx, dy, dz, du, dv, dw, da, db, dc;
+    double  jerk;
+
+    jerk = 0.0; // if a move to nowhere
+
+    // Compute absolute travel distance for each axis:
+    dx = fabs(x - canonEndPoint.x);
+    dy = fabs(y - canonEndPoint.y);
+    dz = fabs(z - canonEndPoint.z);
+    da = fabs(a - canonEndPoint.a);
+    db = fabs(b - canonEndPoint.b);
+    dc = fabs(c - canonEndPoint.c);
+    du = fabs(u - canonEndPoint.u);
+    dv = fabs(v - canonEndPoint.v);
+    dw = fabs(w - canonEndPoint.w);
+
+//    if (canon.leapfrog_enable)
+//    {
+//        dz += 2 * canon.leapfrog_height;
+//    }
+
+    if(!axis_valid(0) || dx < tiny) dx = 0.0;
+    if(!axis_valid(1) || dy < tiny) dy = 0.0;
+    if(!axis_valid(2) || dz < tiny) dz = 0.0;
+    if(!axis_valid(3) || da < tiny) da = 0.0;
+    if(!axis_valid(4) || db < tiny) db = 0.0;
+    if(!axis_valid(5) || dc < tiny) dc = 0.0;
+    if(!axis_valid(6) || du < tiny) du = 0.0;
+    if(!axis_valid(7) || dv < tiny) dv = 0.0;
+    if(!axis_valid(8) || dw < tiny) dw = 0.0;
+
+    if(debug_velacc)
+        printf("getStraightJerk dx %g dy %g dz %g da %g db %g dc %g du %g dv %g dw %g\n",
+               dx, dy, dz, da, db, dc, du, dv, dw);
+
+    // Figure out what kind of move we're making.  This is used to determine
+    // the units of vel/acc.
+    if (dx <= 0.0 && dy <= 0.0 && dz <= 0.0 &&
+        du <= 0.0 && dv <= 0.0 && dw <= 0.0) {
+        cartesian_move = 0;
+    } else {
+        cartesian_move = 1;
+    }
+    if (da <= 0.0 && db <= 0.0 && dc <= 0.0) {
+        angular_move = 0;
+    } else {
+        angular_move = 1;
+    }
+
+    // Pure linear move:
+    if (cartesian_move && !angular_move) {
+        jerk = MIN3((dx?axis_max_jerk[0]: huge),
+                    (dy?axis_max_jerk[1]: huge),
+                    (dz?axis_max_jerk[2]: huge));
+        jerk = FROM_EXT_LEN(MIN4((jerk),
+                        (du?axis_max_jerk[6]: huge),
+                        (dv?axis_max_jerk[7]: huge),
+                        (dw?axis_max_jerk[8]: huge)));
+        assert(jerk > 0);
+    }
+    // Pure angular move:
+    else if (!cartesian_move && angular_move) {
+        jerk = FROM_EXT_ANG(MIN3(
+                    (da?axis_max_jerk[3]: huge),
+                    (db?axis_max_jerk[4]: huge),
+                    (dc?axis_max_jerk[5]: huge)));
+        assert(jerk > 0);
+    }
+    // Combination angular and linear move:
+    else if (cartesian_move && angular_move) {
+
+        double ang_jerk;
+        jerk = MIN3( (dx?axis_max_jerk[0]: huge),
+                    (dy?axis_max_jerk[1]: huge),
+                    (dz?axis_max_jerk[2]: huge));
+
+        jerk = FROM_EXT_LEN(MIN4( jerk,
+                                (du?axis_max_jerk[6]: huge),
+                                (dv?axis_max_jerk[7]: huge),
+                                (dw?axis_max_jerk[8]: huge)));
+
+        ang_jerk = FROM_EXT_ANG(MIN3(
+                            (da?axis_max_jerk[3]: huge),
+                            (db?axis_max_jerk[4]: huge),
+                            (dc?axis_max_jerk[5]: huge)));
+
+        jerk = MIN(jerk, ang_jerk);
+
+        assert(jerk > 0);
+    }
+    return jerk;
+}
+
+double getStraightAcceleration(double x, double y, double z,
+>>>>>>> c01773447196b072f2711b0c091a44a2bd26f7b3
                                double a, double b, double c,
                                double u, double v, double w)
 {
@@ -944,24 +1073,20 @@ static void flush_segments(void) {
     EMC_TRAJ_LINEAR_MOVE linearMoveMsg;
     linearMoveMsg.feed_mode = feed_mode;
 
-    // now x, y, z, and b are in absolute mm or degree units
-    linearMoveMsg.end.tran.x = TO_EXT_LEN(x);
-    linearMoveMsg.end.tran.y = TO_EXT_LEN(y);
-    linearMoveMsg.end.tran.z = TO_EXT_LEN(z);
-
-    linearMoveMsg.end.u = TO_EXT_LEN(u);
-    linearMoveMsg.end.v = TO_EXT_LEN(v);
-    linearMoveMsg.end.w = TO_EXT_LEN(w);
-
-    // fill in the orientation
-    linearMoveMsg.end.a = TO_EXT_ANG(a);
-    linearMoveMsg.end.b = TO_EXT_ANG(b);
-    linearMoveMsg.end.c = TO_EXT_ANG(c);
+    // convert x, y, z from mm to external units(inch or mm)
+    linearMoveMsg.begin = to_ext_pose(canonEndPoint);
+    linearMoveMsg.end = to_ext_pose(x, y, z, a, b, c, u, v, w);
 
     linearMoveMsg.vel = toExtVel(vel);
+<<<<<<< HEAD
     linearMoveMsg.ini_maxvel = toExtVel(linedata.vel);
     AccelData lineaccdata = getStraightAcceleration(x, y, z, a, b, c, u, v, w);
     double acc = lineaccdata.acc;
+=======
+    linearMoveMsg.ini_maxvel = toExtVel(ini_maxvel);
+    linearMoveMsg.ini_maxjerk = TO_EXT_LEN(getStraightJerk(x, y, z, a, b, c, u, v, w));
+    double acc = getStraightAcceleration(x, y, z, a, b, c, u, v, w);
+>>>>>>> c01773447196b072f2711b0c091a44a2bd26f7b3
     linearMoveMsg.acc = toExtAcc(acc);
 
     linearMoveMsg.type = EMC_MOTION_TYPE_FEED;
@@ -1069,15 +1194,22 @@ void STRAIGHT_TRAVERSE(int line_number,
     else
         linearMoveMsg.type = EMC_MOTION_TYPE_TRAVERSE;
 
-    from_prog(x,y,z,a,b,c,u,v,w);
+    from_prog(x,y,z,a,b,c,u,v,w); // convert from prog unit(inch or mm) to internal unit(mm)
     rotate_and_offset_pos(x,y,z,a,b,c,u,v,w);
 
+<<<<<<< HEAD
     VelData veldata = getStraightVelocity(x, y, z, a, b, c, u, v, w);
     AccelData accdata = getStraightAcceleration(x, y, z, a, b, c, u, v, w);
 
     vel = veldata.vel;
     acc = accdata.acc;
 
+=======
+    vel = getStraightVelocity(x, y, z, a, b, c, u, v, w);
+    acc = getStraightAcceleration(x, y, z, a, b, c, u, v, w);
+    linearMoveMsg.ini_maxjerk = TO_EXT_LEN(getStraightJerk(x, y, z, a, b, c, u, v, w));
+    linearMoveMsg.begin = to_ext_pose(canonEndPoint);
+>>>>>>> c01773447196b072f2711b0c091a44a2bd26f7b3
     linearMoveMsg.end = to_ext_pose(x,y,z,a,b,c,u,v,w);
     linearMoveMsg.vel = linearMoveMsg.ini_maxvel = toExtVel(vel);
     linearMoveMsg.acc = toExtAcc(acc);
@@ -1102,9 +1234,6 @@ void STRAIGHT_FEED(int line_number,
                    double a, double b, double c,
                    double u, double v, double w)
 {
-    EMC_TRAJ_LINEAR_MOVE linearMoveMsg;
-    linearMoveMsg.feed_mode = feed_mode;
-
     from_prog(x,y,z,a,b,c,u,v,w);
     rotate_and_offset_pos(x,y,z,a,b,c,u,v,w);
     see_segment(line_number, _tag, x, y, z, a, b, c, u, v, w);
@@ -1138,6 +1267,10 @@ void RIGID_TAP(int line_number, double x, double y, double z)
     rigidTapMsg.vel = toExtVel(ini_maxvel);
     rigidTapMsg.ini_maxvel = toExtVel(ini_maxvel);
     rigidTapMsg.acc = toExtAcc(acc);
+    rigidTapMsg.ini_maxjerk = TO_EXT_LEN(getStraightJerk(x, y, z,
+                                            canonEndPoint.a, canonEndPoint.b, canonEndPoint.c,
+                                            canonEndPoint.u, canonEndPoint.v, canonEndPoint.w)
+                                        );
 
     flush_segments();
 
@@ -1192,10 +1325,12 @@ void STRAIGHT_PROBE(int line_number,
     probeMsg.vel = toExtVel(vel);
     probeMsg.ini_maxvel = toExtVel(ini_maxvel);
     probeMsg.acc = toExtAcc(acc);
+    probeMsg.ini_maxjerk = TO_EXT_LEN(getStraightJerk(x, y, z, a, b, c, u, v, w));
 
     probeMsg.type = EMC_MOTION_TYPE_PROBING;
     probeMsg.probe_type = probe_type;
 
+    probeMsg.begin = to_ext_pose(canonEndPoint);
     probeMsg.pos = to_ext_pose(x,y,z,a,b,c,u,v,w);
 
     if(vel && acc)  {
@@ -1239,6 +1374,11 @@ void SET_MOTION_CONTROL_MODE(CANON_MOTION_MODE mode, double tolerance)
 void SET_NAIVECAM_TOLERANCE(double tolerance)
 {
     canonNaivecamTolerance =  FROM_PROG_LEN(tolerance);
+}
+
+void SET_INTERP_PARAMS(int call_level, int remap_level)
+{
+    interp_list.set_interp_params(call_level, remap_level);
 }
 
 void SELECT_PLANE(CANON_PLANE in_plane)
@@ -1732,6 +1872,7 @@ void ARC_FEED(int line_number,
     // Get planar acceleration bounds
     double a1 = FROM_EXT_LEN(axis_max_acceleration[axis1]);
     double a2 = FROM_EXT_LEN(axis_max_acceleration[axis2]);
+<<<<<<< HEAD
     double v_max_axes = MIN(v1, v2);
     double a_max_axes = MIN(a1, a2);
     //FIXME allow tangential acceleration like in TP
@@ -1741,6 +1882,14 @@ void ARC_FEED(int line_number,
     // Compute the centripetal acceleration
     double v_max_radial = sqrt(a_max_normal * effective_radius);
     canon_debug("v_max_radial = %f\n", v_max_radial);
+=======
+    // Get planar jerk bounds
+    double j1 = FROM_EXT_LEN(axis_max_jerk[axis1]);
+    double j2 = FROM_EXT_LEN(axis_max_jerk[axis2]);
+    double v_max_planar = MIN(v1, v2);
+    double a_max_planar = MIN(a1, a2);
+    double j_max_planar = MIN(j1, j2);
+>>>>>>> c01773447196b072f2711b0c091a44a2bd26f7b3
 
     // Restrict our maximum velocity in-plane if need be
     double v_max_planar = MIN(v_max_radial, v_max_axes);
@@ -1803,17 +1952,20 @@ void ARC_FEED(int line_number,
         // linear move
         // FIXME (Rob) Am I missing something? the P word should never be zero,
         // or we wouldn't be calling ARC_FEED
+        linearMoveMsg.begin = to_ext_pose(canonEndPoint);
         linearMoveMsg.end = to_ext_pose(endpt);
         linearMoveMsg.type = EMC_MOTION_TYPE_ARC;
         linearMoveMsg.vel = toExtVel(vel);
         linearMoveMsg.ini_maxvel = toExtVel(v_max);
         linearMoveMsg.acc = toExtAcc(a_max);
+        linearMoveMsg.ini_maxjerk = j_max_planar;
         linearMoveMsg.indexrotary = -1;
         if(vel && a_max){
             interp_list.set_line_number(line_number);
             tag_and_send(linearMoveMsg, _tag);
         }
     } else {
+        circularMoveMsg.begin = to_ext_pose(canonEndPoint);
         circularMoveMsg.end = to_ext_pose(endpt);
 
         // Convert internal center and normal to external units
@@ -1831,6 +1983,7 @@ void ARC_FEED(int line_number,
         circularMoveMsg.vel = toExtVel(vel);
         circularMoveMsg.ini_maxvel = toExtVel(v_max);
         circularMoveMsg.acc = toExtAcc(a_max);
+        circularMoveMsg.ini_maxjerk = j_max_planar;
 
         //FIXME what happens if accel or vel is zero?
         // The end point is still updated, but nothing is added to the interp list
@@ -1866,7 +2019,7 @@ void SET_SPINDLE_MODE(double css_max) {
     css_maximum = fabs(css_max);
 }
 
-void START_SPINDLE_CLOCKWISE()
+void START_SPINDLE_CLOCKWISE(int line)
 {
     EMC_SPINDLE_ON emc_spindle_on_msg;
 
@@ -1885,10 +2038,11 @@ void START_SPINDLE_CLOCKWISE()
 	emc_spindle_on_msg.speed = spindle_dir * spindleSpeed;
 	css_numerator = 0;
     }
+    interp_list.set_line_number(line);
     interp_list.append(emc_spindle_on_msg);
 }
 
-void START_SPINDLE_COUNTERCLOCKWISE()
+void START_SPINDLE_COUNTERCLOCKWISE(int line)
 {
     EMC_SPINDLE_ON emc_spindle_on_msg;
 
@@ -1907,6 +2061,7 @@ void START_SPINDLE_COUNTERCLOCKWISE()
 	emc_spindle_on_msg.speed = spindle_dir * spindleSpeed;
 	css_numerator = 0;
     }
+    interp_list.set_line_number(line);
     interp_list.append(emc_spindle_on_msg);
 }
 
@@ -1935,12 +2090,13 @@ void SET_SPINDLE_SPEED(double r)
     
 }
 
-void STOP_SPINDLE_TURNING()
+void STOP_SPINDLE_TURNING(int l)
 {
     EMC_SPINDLE_OFF emc_spindle_off_msg;
 
     flush_segments();
 
+    interp_list.set_line_number(l);
     interp_list.append(emc_spindle_off_msg);
 }
 
@@ -2085,10 +2241,12 @@ void CHANGE_TOOL(int slot)
         vel = veldata.vel;
         acc = accdata.acc;
 
+        linearMoveMsg.begin = to_ext_pose(canonEndPoint);
         linearMoveMsg.end = to_ext_pose(x, y, z, a, b, c, u, v, w);
 
         linearMoveMsg.vel = linearMoveMsg.ini_maxvel = toExtVel(vel);
         linearMoveMsg.acc = toExtAcc(acc);
+        linearMoveMsg.ini_maxjerk = TO_EXT_LEN(getStraightJerk(x, y, z, a, b, c, u, v, w));
         linearMoveMsg.type = EMC_MOTION_TYPE_TOOLCHANGE;
 	linearMoveMsg.feed_mode = 0;
         linearMoveMsg.indexrotary = -1;
@@ -2392,9 +2550,13 @@ void PALLET_SHUTTLE()
     /*! \todo FIXME-- unimplemented */
 }
 
-void TURN_PROBE_OFF()
+void TURN_PROBE_OFF(unsigned char probe_type)
 {
     // don't do anything-- this is called when the probing is done
+    EMC_TRAJ_END_OF_PROBE endMsg;
+
+    endMsg.probe_type = probe_type;
+    interp_list.append(endMsg);
 }
 
 void TURN_PROBE_ON()
@@ -3065,7 +3227,7 @@ int USER_DEFINED_FUNCTION_ADD(USER_DEFINED_FUNCTION_TYPE func, int num)
   (the TP doesn't implement a queue of these), 
   use SET_AUX_OUTPUT_BIT instead, that allows to set the value right away
 */
-void SET_MOTION_OUTPUT_BIT(int index)
+void SET_MOTION_OUTPUT_BIT(int index, int line_number)
 {
   EMC_MOTION_SET_DOUT dout_msg;
 
@@ -3076,6 +3238,7 @@ void SET_MOTION_OUTPUT_BIT(int index)
   dout_msg.end = 1;		// endvalue = 1, means it doesn't get reset after current motion
   dout_msg.now = 0;		// not immediate, but synched with motion (goes to the TP)
 
+  interp_list.set_line_number(line_number);
   interp_list.append(dout_msg);
 
   return;
@@ -3093,7 +3256,7 @@ void SET_MOTION_OUTPUT_BIT(int index)
   (the TP doesn't implement a queue of these), 
   use CLEAR_AUX_OUTPUT_BIT instead, that allows to set the value right away
 */
-void CLEAR_MOTION_OUTPUT_BIT(int index)
+void CLEAR_MOTION_OUTPUT_BIT(int index, int line_number)
 {
   EMC_MOTION_SET_DOUT dout_msg;
 
@@ -3104,6 +3267,7 @@ void CLEAR_MOTION_OUTPUT_BIT(int index)
   dout_msg.end = 0;		// endvalue = 0, means it stays 0 after current motion
   dout_msg.now = 0;		// not immediate, but synched with motion (goes to the TP)
 
+  interp_list.set_line_number(line_number);
   interp_list.append(dout_msg);
 
   return;
@@ -3118,7 +3282,7 @@ void CLEAR_MOTION_OUTPUT_BIT(int index)
   (this behaviour can be changed if needed)
   you can use any number of these, as the effect is imediate  
 */
-void SET_AUX_OUTPUT_BIT(int index)
+void SET_AUX_OUTPUT_BIT(int index, int line_number)
 {
 
   EMC_MOTION_SET_DOUT dout_msg;
@@ -3130,6 +3294,7 @@ void SET_AUX_OUTPUT_BIT(int index)
   dout_msg.end = 1;		// endvalue = 1, means it doesn't get reset after current motion
   dout_msg.now = 1;		// immediate, we don't care about synching for AUX
 
+  interp_list.set_line_number(line_number);
   interp_list.append(dout_msg);
 
   return;
@@ -3144,7 +3309,7 @@ void SET_AUX_OUTPUT_BIT(int index)
   (this behaviour can be changed if needed)
   you can use any number of these, as the effect is imediate  
 */
-void CLEAR_AUX_OUTPUT_BIT(int index)
+void CLEAR_AUX_OUTPUT_BIT(int index, int line_number)
 {
   EMC_MOTION_SET_DOUT dout_msg;
 
@@ -3155,6 +3320,7 @@ void CLEAR_AUX_OUTPUT_BIT(int index)
   dout_msg.end = 0;		// endvalue = 0, means it stays 0 after current motion
   dout_msg.now = 1;		// immediate, we don't care about synching for AUX
 
+  interp_list.set_line_number(line_number);
   interp_list.append(dout_msg);
 
   return;
@@ -3210,7 +3376,8 @@ void SET_AUX_OUTPUT_VALUE(int index, double value)
 int WAIT(int index, /* index of the motion exported input */
          int input_type, /*DIGITAL_INPUT or ANALOG_INPUT */
 	 int wait_type,  /* 0 - immediate, 1 - rise, 2 - fall, 3 - be high, 4 - be low */
-	 double timeout) /* time to wait [in seconds], if the input didn't change the value -1 is returned */
+	 double timeout, /* time to wait [in seconds], if the input didn't change the value -1 is returned */
+	 int line_number)
 {
   if (input_type == DIGITAL_INPUT) {
     if ((index < 0) || (index >= EMC_MAX_DIO))
@@ -3229,6 +3396,7 @@ int WAIT(int index, /* index of the motion exported input */
  wait_msg.wait_type = wait_type;
  wait_msg.timeout = timeout;
  
+ interp_list.set_line_number(line_number);
  interp_list.append(wait_msg);
  return 0;
 }
@@ -3238,6 +3406,7 @@ int UNLOCK_ROTARY(int line_number, int axis) {
     // first, set up a zero length move to interrupt blending and get to final position
     m.type = EMC_MOTION_TYPE_TRAVERSE;
     m.feed_mode = 0;
+    m.begin = to_ext_pose(canonEndPoint);
     m.end = to_ext_pose(canonEndPoint.x, canonEndPoint.y, canonEndPoint.z,
                         canonEndPoint.a, canonEndPoint.b, canonEndPoint.c,
                         canonEndPoint.u, canonEndPoint.v, canonEndPoint.w);

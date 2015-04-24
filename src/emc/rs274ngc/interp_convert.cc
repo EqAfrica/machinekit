@@ -2556,7 +2556,7 @@ for cycles) need testing.
 int Interp::convert_length_units(int g_code,     //!< g_code being executed (must be G_20 or G_21)
                                 setup_pointer settings) //!< pointer to machine settings                 
 {
-  if (g_code == G_20) {
+  if ((g_code == G_20) || (g_code == G_70)) {
     USE_LENGTH_UNITS(CANON_UNITS_INCHES);
     if (settings->length_units != CANON_UNITS_INCHES) {
       settings->length_units = CANON_UNITS_INCHES;
@@ -2596,7 +2596,7 @@ int Interp::convert_length_units(int g_code,     //!< g_code being executed (mus
       settings->tool_offset.w = GET_EXTERNAL_TOOL_LENGTH_WOFFSET();
       settings->feed_rate = GET_EXTERNAL_FEED_RATE();
     }
-  } else if (g_code == G_21) {
+  } else if ((g_code == G_21) || (g_code == G_71)) {
     USE_LENGTH_UNITS(CANON_UNITS_MM);
     if (settings->length_units != CANON_UNITS_MM) {
       settings->length_units = CANON_UNITS_MM;
@@ -3013,22 +3013,22 @@ int Interp::convert_m(block_pointer block,       //!< pointer to a block of RS27
       CHKS((settings->cutter_comp_side),
            (_("Cannot set motion output with cutter radius compensation on")));  // XXX
       CHKS((!block->p_flag), _("No valid P word with M62"));
-      SET_MOTION_OUTPUT_BIT(round_to_int(block->p_number));
+      SET_MOTION_OUTPUT_BIT(round_to_int(block->p_number), block->line_number);
   } else if ((block->m_modes[5] == 63) && ONCE_M(5)) {
       CHKS((settings->cutter_comp_side),
            (_("Cannot set motion digital output with cutter radius compensation on")));  // XXX
       CHKS((!block->p_flag), _("No valid P word with M63"));
-      CLEAR_MOTION_OUTPUT_BIT(round_to_int(block->p_number));
+      CLEAR_MOTION_OUTPUT_BIT(round_to_int(block->p_number), block->line_number);
   } else if ((block->m_modes[5] == 64) && ONCE_M(5)){
       CHKS((settings->cutter_comp_side),
            (_("Cannot set auxiliary digital output with cutter radius compensation on")));  // XXX
       CHKS((!block->p_flag), _("No valid P word with M64"));
-      SET_AUX_OUTPUT_BIT(round_to_int(block->p_number));
+      SET_AUX_OUTPUT_BIT(round_to_int(block->p_number), block->line_number);
   } else if ((block->m_modes[5] == 65) && ONCE_M(5)) {
       CHKS((settings->cutter_comp_side),
            (_("Cannot set auxiliary digital output with cutter radius compensation on")));  // XXX
       CHKS((!block->p_flag), _("No valid P word with M65"));
-      CLEAR_AUX_OUTPUT_BIT(round_to_int(block->p_number));
+      CLEAR_AUX_OUTPUT_BIT(round_to_int(block->p_number), block->line_number);
   } else if ((block->m_modes[5] == 66) && ONCE_M(5)){
 
     //P-word = digital channel
@@ -3077,7 +3077,7 @@ int Interp::convert_m(block_pointer block,       //!< pointer to a block of RS27
         CHKS((settings->cutter_comp_side),
              (_("Cannot wait for digital input with cutter radius compensation on")));
 
-	int ret = WAIT(round_to_int(block->p_number), DIGITAL_INPUT, type, timeout);
+	int ret = WAIT(round_to_int(block->p_number), DIGITAL_INPUT, type, timeout, block->line_number);
 	//WAIT returns 0 on success, -1 for out of bounds
 	CHKS((ret == -1), NCE_DIGITAL_INPUT_INVALID_ON_M66);
 	if (ret == 0) {
@@ -3089,7 +3089,7 @@ int Interp::convert_m(block_pointer block,       //!< pointer to a block of RS27
         CHKS((settings->cutter_comp_side),
              (_("Cannot wait for analog input with cutter radius compensation on")));
 
-	int ret = WAIT(round_to_int(block->e_number), ANALOG_INPUT, 0, 0); //WAIT returns 0 on success, -1 for out of bounds
+	int ret = WAIT(round_to_int(block->e_number), ANALOG_INPUT, 0, 0, block->line_number); //WAIT returns 0 on success, -1 for out of bounds
 	CHKS((ret == -1), NCE_ANALOG_INPUT_INVALID_ON_M66);
 	if (ret == 0) {
 	    settings->input_flag = true;
@@ -3197,13 +3197,13 @@ int Interp::convert_m(block_pointer block,       //!< pointer to a block of RS27
     return convert_remapped_code(block, settings, STEP_M_7, 'm',
 				   block->m_modes[7]);
  } else if ((block->m_modes[7] == 3)  && ONCE_M(7)) {
-    enqueue_START_SPINDLE_CLOCKWISE();
+    enqueue_START_SPINDLE_CLOCKWISE(block->line_number);
     settings->spindle_turning = CANON_CLOCKWISE;
  } else if ((block->m_modes[7] == 4) && ONCE_M(7)) {
-    enqueue_START_SPINDLE_COUNTERCLOCKWISE();
+    enqueue_START_SPINDLE_COUNTERCLOCKWISE(block->line_number);
     settings->spindle_turning = CANON_COUNTERCLOCKWISE;
  } else if ((block->m_modes[7] == 5) && ONCE_M(7)){
-    enqueue_STOP_SPINDLE_TURNING();
+    enqueue_STOP_SPINDLE_TURNING(block->line_number);
     settings->spindle_turning = CANON_STOPPED;
   } else if ((block->m_modes[7] == 19) && ONCE_M(7)) {
       settings->spindle_turning = CANON_STOPPED;
@@ -3361,7 +3361,8 @@ if (IS_USER_MCODE(block,settings,10) && ONCE_M(10)) {
     if (USER_DEFINED_FUNCTION[index - 100] == 0) {
       CHKS(1, NCE_UNKNOWN_M_CODE_USED,index);
     }
-    enqueue_M_USER_COMMAND(index,block->p_number,block->q_number);
+    enqueue_M_USER_COMMAND(index,block->p_number,block->q_number,block->r_number,
+            block->s_number,block->j_number,block->k_number, block->l_number);
   }
   return INTERP_OK;
 }
@@ -3589,7 +3590,7 @@ int Interp::convert_probe(block_pointer block,   //!< pointer to a block of RS27
                  AA_end, BB_end, CC_end,
                  u_end, v_end, w_end, probe_type);
 
-  TURN_PROBE_OFF();
+  TURN_PROBE_OFF(probe_type);
   settings->motion_mode = g_code;
   settings->probe_flag = true;
   return INTERP_OK;
@@ -4312,7 +4313,7 @@ int Interp::convert_stop(block_pointer block,    //!< pointer to a block of RS27
     settings->cutter_comp_side = false;
     settings->cutter_comp_firstmove = true;
 
-/*7*/ STOP_SPINDLE_TURNING();
+/*7*/ STOP_SPINDLE_TURNING(block->line_number);
     settings->spindle_turning = CANON_STOPPED;
 
     /* turn off FPR */
@@ -5154,7 +5155,7 @@ int Interp::convert_tool_change(setup_pointer settings)  //!< pointer to machine
 
   START_CHANGE(); // indicate start of change operation
   if (!settings->tool_change_with_spindle_on) {
-      STOP_SPINDLE_TURNING();
+      STOP_SPINDLE_TURNING(0);
       settings->spindle_turning = CANON_STOPPED;
   }
 

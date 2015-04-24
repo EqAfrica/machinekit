@@ -44,6 +44,7 @@ typedef struct {
     hal_float_t *motor_offset;	/* RPI: motor offset, for checking homing stability */
     hal_float_t *motor_pos_cmd;	/* WPI: commanded position, with comp */
     hal_float_t *motor_pos_fb;	/* RPI: position feedback, with comp */
+    hal_float_t *risc_pos_cmd;  /* RPI: position command issued by RISC */
     hal_float_t *joint_pos_cmd;	/* WPI: commanded position w/o comp, mot ofs */
     hal_float_t *joint_pos_fb;	/* RPI: position feedback, w/o comp */
     hal_float_t *f_error;	/* RPI: following error */
@@ -80,13 +81,43 @@ typedef struct {
     hal_bit_t *jog_enable;	/* RPI: enable jogwheel */
     hal_float_t *jog_scale;	/* RPI: distance to jog on each count */
     hal_bit_t *jog_vel_mode;	/* RPI: true for "velocity mode" jogwheel */
+    hal_float_t *probed_pos;
+    
+    /* for usb_homing.c */
+    hal_float_t *risc_probe_vel;	/* OUT */
+    hal_float_t *risc_probe_dist;       /* OUT */
+    hal_s32_t   *risc_probe_pin;	/* OUT */
+    hal_s32_t   *risc_probe_type;	/* OUT */
+    hal_s32_t   *home_sw_id;		/* IN */ 
+    hal_float_t *index_pos_pin; /* RPI: motor index position (absolute motor position count) */
+
+    hal_bit_t *usb_ferror_flag;
+    hal_float_t *blender_offset;
 
 } joint_hal_t;
 
 /* machine data */
 
 typedef struct {
+    /* signal for RISC_CMD REQ and ACK */
+    hal_bit_t *update_pos_req;
+    hal_bit_t *update_pos_ack;
+    hal_u32_t *rcmd_state;
+
+    hal_bit_t *usb_busy;
+    hal_bit_t *rtp_running;
+    hal_bit_t *mpg_scale_x1;    /* is MPG scale at x1 mode? */
+    hal_bit_t *mpg_scale_x10;    /* is MPG scale at x10 mode? */
+    hal_bit_t *mpg_scale_x100;    /* is MPG scale at x100 mode? */
+
     hal_bit_t *probe_input;	/* RPI: probe switch input */
+    hal_bit_t *probing;
+    hal_u32_t *trigger_din;
+    hal_u32_t *trigger_ain;
+    hal_u32_t *trigger_type;
+    hal_bit_t *trigger_cond;
+    hal_u32_t *trigger_level;
+    hal_bit_t *trigger_result;
     hal_bit_t *enable;		/* RPI: motion inhibit input */
     hal_bit_t *spindle_index_enable;
     hal_bit_t *spindle_is_atspeed;
@@ -107,6 +138,8 @@ typedef struct {
     hal_float_t *current_vel;   /* RPI: velocity magnitude in machine units */
     hal_float_t *requested_vel;   /* RPI: requested velocity magnitude in machine units */
     hal_float_t *distance_to_go;/* RPI: distance to go in current move*/
+    hal_s32_t *motion_state;    /* indicate s-curve state */
+    hal_s32_t *motion_type;     /* motion_type of current tc: LINEAR(1) CIRCULAR(2) SPINDLE_SYNC_MOTION(3) NURBS(4) */
 
     hal_bit_t debug_bit_0;	/* RPA: generic param, for debugging */
     hal_bit_t debug_bit_1;	/* RPA: generic param, for debugging */
@@ -119,8 +152,12 @@ typedef struct {
     
     hal_bit_t *synch_do[EMCMOT_MAX_DIO]; /* WPI array: output pins for motion synched IO */
     hal_bit_t *synch_di[EMCMOT_MAX_DIO]; /* RPI array: input pins for motion synched IO */
+<<<<<<< HEAD
     hal_bit_t *synch_do_io[EMCMOT_MAX_DIO]; /* RPI array: output io pins for motion synched IO */
     hal_float_t *analog_input[EMCMOT_MAX_AIO]; /* RPI array: input pins for analog Inputs */
+=======
+    hal_s32_t *analog_input[EMCMOT_MAX_AIO]; /* RPI array: input pins for analog Inputs */
+>>>>>>> c01773447196b072f2711b0c091a44a2bd26f7b3
     hal_float_t *analog_output[EMCMOT_MAX_AIO]; /* RPI array: output pins for analog Inputs */
     hal_float_t *analog_output_io[EMCMOT_MAX_AIO]; /* RPI array: output io pins for analog Inputs */
 
@@ -185,6 +222,7 @@ typedef struct {
     joint_hal_t joint[EMCMOT_MAX_JOINTS];	/* data for each joint */
 
 
+    hal_bit_t *tp_reverse_input;
     hal_s32_t *pause_state;  // mirror pause state in HAL
 
 
@@ -192,6 +230,7 @@ typedef struct {
     // record position (fh_carte_pos, motion type), and switch to the alternate
     // motion queue.
     hal_bit_t *pause_offset_enable;
+    hal_bit_t *pause_return_path;
 
     hal_bit_t *pause_offset_in_range;    // current offset ok with joint limits
 
@@ -229,16 +268,6 @@ typedef struct {
     hal_float_t *pause_offset_w;
 
 } emcmot_hal_data_t;
-
-enum pause_state { PS_RUNNING=0,  // aka 'not paused'
-		   PS_PAUSING=1,  // looking for the first pausable motion (e.g. not spindle-synced)
-		   PS_PAUSED=2,   // motion stopped, and ok to unpause
-		   PS_PAUSED_IN_OFFSET=3, // motion stopped, but not where we can return to primary queue
-		   PS_JOGGING=4,  // coord mode motion in progress
-		   PS_RETURNING=5, // executing a return move to return to running
-		   PS_PAUSING_FOR_STEP=6,
-};
-
 
 /***********************************************************************
 *                   GLOBAL VARIABLE DECLARATIONS                       *
@@ -318,6 +347,8 @@ extern hal_bit_t emcmotGetRotaryIsUnlocked(int axis);
 /* homing is no longer in control.c, make functions public */
 extern void do_homing_sequence(void);
 extern void do_homing(void);
+extern void do_usb_homing_sequence(void);
+extern void do_usb_homing(void);
 
 /* loops through the active joints and checks if any are not homed */
 extern int checkAllHomed(void);

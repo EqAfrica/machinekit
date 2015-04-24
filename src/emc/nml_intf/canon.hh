@@ -151,6 +151,10 @@ given. */
 extern void CANON_UPDATE_END_POINT(double x, double y, double z, 
 				   double a, double b, double c,
 				   double u, double v, double w);
+extern void INTERP_UPDATE_END_POINT(double x, double y, double z,
+                                   double a, double b, double c,
+                                   double u, double v, double w);
+
 /* Called from emctask to update the canon position during skipping through
    programs started with start-from-line > 0. */
 
@@ -446,12 +450,12 @@ extern void SPINDLE_RETRACT_TRAVERSE();
 
 /* Retract the spindle at traverse rate to the fully retracted position. */
 
-extern void START_SPINDLE_CLOCKWISE();
+extern void START_SPINDLE_CLOCKWISE(int line);
 
 /* Turn the spindle clockwise at the currently set speed rate. If the
 spindle is already turning that way, this command has no effect. */
 
-extern void START_SPINDLE_COUNTERCLOCKWISE();
+extern void START_SPINDLE_COUNTERCLOCKWISE(int line);
 
 /* Turn the spindle counterclockwise at the currently set speed rate. If
 the spindle is already turning that way, this command has no effect. */
@@ -463,7 +467,7 @@ This is usually given in rpm and refers to the rate of spindle
 rotation. If the spindle is already turning and is at a different
 speed, change to the speed given with this command. */
 
-extern void STOP_SPINDLE_TURNING();
+extern void STOP_SPINDLE_TURNING(int l);
 
 /* Stop the spindle from turning. If the spindle is already stopped, this
 command may be given, but it will have no effect. */
@@ -592,7 +596,7 @@ this will not result in an error condition in the controller.
 If the machining center does not have a pallet shuttle, this command
 should result in an error condition in the controller. */
 
-extern void TURN_PROBE_OFF();
+extern void TURN_PROBE_OFF(unsigned char probe_type);
 extern void TURN_PROBE_ON();
 
 extern void UNCLAMP_AXIS(CANON_AXIS axis);
@@ -649,13 +653,17 @@ input), this command has no effect. */
 
 
 /* Commands to set/reset output bits and analog values */
-extern void SET_MOTION_OUTPUT_BIT(int index);
-extern void CLEAR_MOTION_OUTPUT_BIT(int index);
-extern void SET_AUX_OUTPUT_BIT(int index);
-extern void CLEAR_AUX_OUTPUT_BIT(int index);
+extern void SET_MOTION_OUTPUT_BIT(int index, int line);
+extern void CLEAR_MOTION_OUTPUT_BIT(int index, int line);
+extern void SET_AUX_OUTPUT_BIT(int index, int line);
+extern void CLEAR_AUX_OUTPUT_BIT(int index, int line);
 
 extern void SET_MOTION_OUTPUT_VALUE(int index, double value);
 extern void SET_AUX_OUTPUT_VALUE(int index, double value);
+
+/* */
+extern void SET_INTERP_PARAMS(int call_level, int remap_level);
+
 
 /* Commands to wait for, query input bits and analog values */
 
@@ -671,7 +679,8 @@ extern void SET_AUX_OUTPUT_VALUE(int index, double value);
 extern int WAIT(int index, /* index of the motion exported input */
 		int input_type, /* 1=DIGITAL_INPUT or 0=ANALOG_INPUT */
 	        int wait_type, /* 0 - immediate, 1 - rise, 2 - fall, 3 - be high, 4 - be low */
-		double timeout); /* time to wait [in seconds], if the input didn't change the value -1 is returned */
+		double timeout, /* time to wait [in seconds], if the input didn't change the value -1 is returned */
+                int line);
 /* WAIT - program execution is stopped until the input selected by index 
    changed to the needed state (specified by wait_type).
    Return value: either wait_type if timeout didn't occur, or -1 otherwise. */
@@ -888,7 +897,9 @@ extern char _parameter_file_name[];	/* in canon.cc */
 
 #define USER_DEFINED_FUNCTION_NUM 100
 typedef void (*USER_DEFINED_FUNCTION_TYPE) (int num, double arg1,
-					    double arg2);
+					    double arg2, double arg3,
+                                            double arg4, double arg5,
+                                            double arg6, double arg7);
 extern USER_DEFINED_FUNCTION_TYPE
     USER_DEFINED_FUNCTION[USER_DEFINED_FUNCTION_NUM];
 extern int USER_DEFINED_FUNCTION_ADD(USER_DEFINED_FUNCTION_TYPE func,

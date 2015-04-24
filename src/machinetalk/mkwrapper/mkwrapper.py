@@ -1221,6 +1221,11 @@ class LinuxCNCWrapper():
             self.status.motion.current_vel = 0.0
             self.status.motion.delay_left = 0.0
             self.status.motion.distance_to_go = 0.0
+            self.status.motion.prim_dtg = 0.0
+            self.status.motion.prim_progress = 0.0
+            self.status.motion.next_tp_reversed = False
+            self.status.motion.cur_tp_reversed = False
+            self.status.motion.tp_reverse_input = False
             self.status.motion.dtg.MergeFrom(self.zero_position())
             self.status.motion.enabled = False
             self.status.motion.feed_hold_enabled = False
@@ -1236,7 +1241,7 @@ class LinuxCNCWrapper():
             self.status.motion.motion_line = 0
             self.status.motion.motion_type = 0
             self.status.motion.motion_mode = 0
-            self.status.motion.paused = False
+            self.status.motion.pause_state = 0
             self.status.motion.position.MergeFrom(self.zero_position())
             self.status.motion.probe_tripped = False
             self.status.motion.probe_val = 0
@@ -1472,6 +1477,31 @@ class LinuxCNCWrapper():
             self.statusTx.motion.distance_to_go = stat.distance_to_go
             modified = True
 
+        if self.notEqual(self.status.motion.prim_dtg, stat.prim_dtg):
+            self.status.motion.prim_dtg = stat.prim_dtg
+            self.txStatus.motion.prim_dtg = stat.prim_dtg
+            modified = True
+
+        if self.notEqual(self.status.motion.prim_progress, stat.prim_progress):
+            self.status.motion.prim_progress = stat.prim_progress
+            self.txStatus.motion.prim_progress = stat.prim_progress
+            modified = True
+        
+        if self.notEqual(self.status.motion.cur_tp_reversed, stat.cur_tp_reversed):
+            self.status.motion.cur_tp_reversed = stat.cur_tp_reversed
+            self.txStatus.motion.cur_tp_reversed = stat.cur_tp_reversed
+            modified = True
+
+        if self.notEqual(self.status.motion.next_tp_reversed, stat.next_tp_reversed):
+            self.status.motion.next_tp_reversed = stat.next_tp_reversed
+            self.txStatus.motion.next_tp_reversed = stat.next_tp_reversed
+            modified = True
+
+        if self.notEqual(self.status.motion.tp_reverse_input, stat.tp_reverse_input):
+            self.status.motion.tp_reverse_input = stat.tp_reverse_input
+            self.txStatus.motion.tp_reverse_input = stat.tp_reverse_input
+            modified = True
+
         txDout = EmcStatusDigitalIO()
         for index, dout in enumerate(stat.dout):
             txDout.Clear()
@@ -1602,9 +1632,15 @@ class LinuxCNCWrapper():
             self.statusTx.motion.motion_mode = stat.motion_mode
             modified = True
 
+<<<<<<< HEAD
         if (self.status.motion.paused != stat.paused):
             self.status.motion.paused = stat.paused
             self.statusTx.motion.paused = stat.paused
+=======
+        if (self.status.motion.pause_state != stat.pause_state):
+            self.status.motion.pause_state = stat.pause_state
+            self.txStatus.motion.pause_state = stat.pause_state
+>>>>>>> c01773447196b072f2711b0c091a44a2bd26f7b3
             modified = True
 
         positionModified, txPosition = self.check_position(self.status.motion.position, stat.position)

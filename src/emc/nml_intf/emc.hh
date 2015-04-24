@@ -143,6 +143,7 @@ struct PM_CARTESIAN;
 #define EMC_TRAJ_SET_SO_ENABLE_TYPE                  ((NMLTYPE) 235)
 #define EMC_TRAJ_SET_FH_ENABLE_TYPE                  ((NMLTYPE) 236)
 #define EMC_TRAJ_RIGID_TAP_TYPE                      ((NMLTYPE) 237)
+#define EMC_TRAJ_END_OF_PROBE_TYPE                   ((NMLTYPE) 239)
 
 #define EMC_TRAJ_STAT_TYPE                           ((NMLTYPE) 299)
 
@@ -310,7 +311,8 @@ enum EMC_TASK_EXEC_ENUM {
     EMC_TASK_EXEC_WAITING_FOR_MOTION_AND_IO = 7,
     EMC_TASK_EXEC_WAITING_FOR_DELAY = 8,
     EMC_TASK_EXEC_WAITING_FOR_SYSTEM_CMD = 9,
-    EMC_TASK_EXEC_WAITING_FOR_SPINDLE_ORIENTED = 10
+    EMC_TASK_EXEC_WAITING_FOR_SPINDLE_ORIENTED = 10,
+    EMC_TASK_EXEC_RESUME = 11
 };
 
 // types for EMC_TASK interpState
@@ -390,6 +392,8 @@ extern int emcAxisSetHomingParams(int axis, double home, double offset, double h
 				  int is_shared, int home_sequence, int volatile_home, int locking_indexer);
 extern int emcAxisSetMaxVelocity(int axis, double vel);
 extern int emcAxisSetMaxAcceleration(int axis, double acc);
+extern int emcAxisSetMaxJerk(int axis, double jerk);
+extern int emcAxisSetSyncId(int axis, int sync_id);
 
 extern int emcAxisInit(int axis);
 extern int emcAxisHalt(int axis);
@@ -419,8 +423,10 @@ extern int emcTrajSetMode(int axes);
 extern int emcTrajSetTeleopVector(EmcPose vel);
 extern int emcTrajSetVelocity(double vel, double ini_maxvel);
 extern int emcTrajSetAcceleration(double acc);
+extern int emcTrajSetJerk(double jerk);
 extern int emcTrajSetMaxVelocity(double vel);
 extern int emcTrajSetMaxAcceleration(double acc);
+extern int emcTrajSetMaxJerk(double jerk);
 extern int emcTrajSetScale(double scale);
 extern int emcTrajSetFOEnable(unsigned char mode);   //feed override enable
 extern int emcTrajSetFHEnable(unsigned char mode);   //feed hold enable
@@ -441,9 +447,9 @@ extern int emcTrajStep();
 extern int emcTrajResume();
 extern int emcTrajDelay(double delay);
 extern int emcTrajLinearMove(EmcPose end, int type, double vel,
-                             double ini_maxvel, double acc, int indexrotary);
+                             double ini_maxvel, double acc, double jerk, int indexrotary);
 extern int emcTrajCircularMove(EmcPose end, PM_CARTESIAN center, PM_CARTESIAN
-        normal, int turn, int type, double vel, double ini_maxvel, double acc);
+        normal, int turn, int type, double vel, double ini_maxvel, double acc, double ini_maxjerk);
 extern int emcTrajSetTermCond(int cond, double tolerance);
 extern int emcTrajSetSpindleSync(double feed_per_revolution, bool wait_for_index);
 extern int emcTrajSetOffset(EmcPose tool_offset);
@@ -451,10 +457,11 @@ extern int emcTrajSetOrigin(EmcPose origin);
 extern int emcTrajSetRotation(double rotation);
 extern int emcTrajSetHome(EmcPose home);
 extern int emcTrajClearProbeTrippedFlag();
-extern int emcTrajProbe(EmcPose pos, int type, double vel, 
-                        double ini_maxvel, double acc, unsigned char probe_type);
+extern int emcTrajEndProbe(unsigned char probe_type);
+extern int emcTrajProbe(EmcPose pos, int type, double vel,
+                        double ini_maxvel, double acc, double ini_maxjerk, unsigned char probe_type);
 extern int emcAuxInputWait(int index, int input_type, int wait_type, int timeout);
-extern int emcTrajRigidTap(EmcPose pos, double vel, double ini_maxvel, double acc);
+extern int emcTrajRigidTap(EmcPose pos, double vel, double ini_maxvel, double acc, double ini_maxjerk);
 
 extern int emcTrajUpdate(EMC_TRAJ_STAT * stat);
 
@@ -472,6 +479,8 @@ extern int emcMotionSetDout(unsigned char index, unsigned char start,
 extern int emcMotionUpdate(EMC_MOTION_STAT * stat);
 
 extern int emcAbortCleanup(int reason,const char *message = "");
+
+extern int emcBypassFlags(void);
 
 // implementation functions for EMC_TOOL types
 
@@ -554,6 +563,7 @@ int emcSetupArcBlends(int arcBlendEnable,
         int arcBlendOptDepth,
         int arcBlendGapCycles,
         double arcBlendRampFreq);
+int emcSetupUsbMot(int usbmotEnable);
 
 extern int emcUpdate(EMC_STAT * stat);
 // full EMC status

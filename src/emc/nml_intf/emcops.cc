@@ -61,7 +61,10 @@ EMC_TRAJ_STAT_MSG(EMC_TRAJ_STAT_TYPE, sizeof(EMC_TRAJ_STAT)),
     activeQueue = 0;
     queueFull = OFF;
     id = 0;
-    paused = OFF;
+    pause_state = 0;  //!< PS_RUNNING=0,  // aka 'not paused'
+    next_tp_reversed = OFF;
+    cur_tp_reversed = OFF;
+    tp_reverse_input = OFF;
     scale = 0.0;
     spindle_scale = 0.0;
 
@@ -78,8 +81,15 @@ EMC_TRAJ_STAT_MSG(EMC_TRAJ_STAT_TYPE, sizeof(EMC_TRAJ_STAT)),
     probing = OFF;
     probeval = 0;
     
+#ifdef USB_MOTION_ENABLE
+    update_pos_req = OFF;       // update position request from RISC
+#endif
+
     ZERO_EMC_POSE(dtg);
     distance_to_go = 0.0;
+    prim_progress = 0.0;
+    prim_dtg = 0.0;
+
     kinematics_type = 0;
     motion_type = 0;
     current_vel = 0.0;

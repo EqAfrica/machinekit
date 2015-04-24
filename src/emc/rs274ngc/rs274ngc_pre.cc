@@ -280,14 +280,15 @@ int Interp::_execute(const char *command)
 	return status;
     }
   }
-  logDebug("execute:%s %s='%s' mdi_int=%d o_type=%s o_name=%s cl=%d rl=%d type=%s state=%s",
+  logDebug("execute:%s %s='%s' mdi_int=%d o_type=%s o_name=%s cl=%d rl=%d type=%s state=%s lineno(%d)",
 	   MDImode ? "MDI" : "auto",
 	   command ? "command" : "line",
 	   command ? command : _setup.linetext,
 	    _setup.mdi_interrupt, o_ops[eblock->o_type], eblock->o_name,
 	   _setup.call_level,_setup.remap_level, 
 	   eblock->call_type < 0 ? "*unset*" : call_typenames[eblock->call_type], 
-	   call_statenames[_setup.call_state]);
+	   call_statenames[_setup.call_state],
+	   eblock->line_number);
 
   // process control functions -- will skip if skipping
   if ((eblock->o_name != 0) || _setup.mdi_interrupt)  {
@@ -1704,6 +1705,30 @@ int Interp::reset()
 
 /***********************************************************************/
 
+/*! Interp::bypass_flags
+
+Returned Value: int (INTERP_OK)
+
+Called By:
+   external programs
+
+This function resets the flags of the _setup model having to do with
+reading and interpreting one line.
+
+It will reset flags so that refresh_actual_position() is bypassed for
+skipped lines.
+
+*/
+
+int Interp::bypass_flags()
+{
+    _setup.probe_flag = false;
+    _setup.toolchange_flag = false;
+    return INTERP_OK;
+}
+
+/***********************************************************************/
+
 /*! Interp::restore_parameters
 
 Returned Value:
@@ -1970,6 +1995,112 @@ int Interp::synch()
 }
 
 /***********************************************************************/
+
+/*! Interp::save_cur_pos()
+
+Returned Value: int (INTERP_OK)
+
+Called By:
+   external programs
+
+This function save the current positions of _setup
+
+*/
+int Interp::save_cur_pos()
+{
+    _setup.saved_AA = _setup.AA_current;
+    _setup.saved_BB = _setup.BB_current;
+    _setup.saved_CC = _setup.CC_current;
+    _setup.saved_x  = _setup.current_x;
+    _setup.saved_y  = _setup.current_y;
+    _setup.saved_z  = _setup.current_z;
+    _setup.saved_u  = _setup.u_current;
+    _setup.saved_v  = _setup.v_current;
+    _setup.saved_w  = _setup.w_current;
+    return INTERP_OK;
+}
+
+
+/***********************************************************************/
+
+/*! Interp::restore_cur_pos()
+
+Returned Value: int (INTERP_OK)
+
+Called By:
+   external programs
+
+This function restore current positions from saved ones.
+
+*/
+int Interp::restore_cur_pos()
+{
+    _setup.AA_current = _setup.saved_AA;
+    _setup.BB_current = _setup.saved_BB;
+    _setup.CC_current = _setup.saved_CC;
+    _setup.current_x  = _setup.saved_x;
+    _setup.current_y  = _setup.saved_y;
+    _setup.current_z  = _setup.saved_z;
+    _setup.u_current  = _setup.saved_u;
+    _setup.v_current  = _setup.saved_v;
+    _setup.w_current  = _setup.saved_w;
+    INTERP_UPDATE_END_POINT(
+            _setup.current_x,
+            _setup.current_y,
+            _setup.current_z,
+            _setup.AA_current,
+            _setup.BB_current,
+            _setup.CC_current,
+            _setup.u_current,
+            _setup.v_current,
+            _setup.w_current);
+    return INTERP_OK;
+}
+
+int Interp::get_cur_pos(double *x, double *y, double *z, double *a, double *b, double *c, double *u, double *v, double *w)
+{
+    *a = _setup.AA_current;
+    *b = _setup.BB_current;
+    *c = _setup.CC_current;
+    *x = _setup.current_x ;
+    *y = _setup.current_y ;
+    *z = _setup.current_z ;
+    *u = _setup.u_current ;
+    *v = _setup.v_current ;
+    *w = _setup.w_current ;
+    return INTERP_OK;
+}
+
+int Interp::set_cur_pos(double *x, double *y, double *z, double *a, double *b, double *c, double *u, double *v, double *w)
+{
+    if (x != NULL) { _setup.current_x = *x; }
+    if (y != NULL) { _setup.current_y = *y; }
+    if (z != NULL) { _setup.current_z = *z; }
+    if (a != NULL) { _setup.AA_current = *a; }
+    if (b != NULL) { _setup.BB_current = *b; }
+    if (c != NULL) { _setup.CC_current = *c; }
+    if (u != NULL) { _setup.u_current = *u; }
+    if (v != NULL) { _setup.v_current = *v; }
+    if (w != NULL) { _setup.w_current = *w; }
+
+    /**
+     * Will convert to CANON unit(mm), and rotate_and offset_pos()
+     * inside INTERP_UPDATE_END_POINT()
+     **/
+    INTERP_UPDATE_END_POINT(
+            _setup.current_x,
+            _setup.current_y,
+            _setup.current_z,
+            _setup.AA_current,
+            _setup.BB_current,
+            _setup.CC_current,
+            _setup.u_current,
+            _setup.v_current,
+            _setup.w_current);
+
+    return INTERP_OK;
+}
+
 /***********************************************************************/
 
 /*
@@ -2277,6 +2408,30 @@ Called By: external programs
 int Interp::sequence_number()
 {
   return _setup.sequence_number;
+}
+
+/***********************************************************************/
+
+/*! Interp::toplevel_sequence_number
+
+Returned Value: the toplevel interpreter sequence number before
+                REMAP or SUB-CALL
+
+Side Effects: none
+
+Called By: external programs
+
+*/
+
+int Interp::toplevel_sequence_number()
+{
+    if (_setup.remap_level == 0)
+    {
+        return _setup.sequence_number;
+    } else
+    {   // use saved_line_number of toplevel for motion-id
+        return _setup.blocks[_setup.remap_level].saved_line_number;
+    }
 }
 
 /***********************************************************************/

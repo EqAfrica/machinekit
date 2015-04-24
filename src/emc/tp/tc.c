@@ -188,6 +188,7 @@ int pmCircleTangentVector(PmCircle const * const circle,
 
     //Normalize final output vector
     pmCartUnit(&uTan, out);
+
     return 0;
 }
 
@@ -303,8 +304,7 @@ int tcGetPosReal(TC_STRUCT const * const tc, int of_point, EmcPose * const pos)
             break;
         case TC_LINEAR:
             pmCartLinePoint(&tc->coords.line.xyz,
-                    progress * tc->coords.line.xyz.tmag / tc->target,
-                    &xyz);
+                    progress, &xyz);
             pmCartLinePoint(&tc->coords.line.uvw,
                     progress * tc->coords.line.uvw.tmag / tc->target,
                     &uvw);
@@ -429,17 +429,18 @@ int tcFindBlendTolerance(TC_STRUCT const * const prev_tc,
     double T2 = tc->tolerance;
     //Detect zero tolerance = no tolerance and force to reasonable maximum
     if (T1 == 0) {
-        T1 = prev_tc->nominal_length * tolerance_ratio;
+        /* calculate MAX arc radius based on request-velocity of prev_tc */
+        T1 = prev_tc->reqvel * prev_tc->cycle_time * prev_tc->reqvel * prev_tc->cycle_time / prev_tc->maxaccel;
     }
     if (T2 == 0) {
-        T2 = tc->nominal_length * tolerance_ratio;
+        /* calculate MAX arc radius based on request-velocity of tc */
+        T2 = tc->reqvel * tc->cycle_time * tc->reqvel * tc->cycle_time / tc->maxaccel;
     }
     *nominal_tolerance = fmin(T1,T2);
     //Blend tolerance is the limit of what we can reach by blending alone,
     //consuming half a segment or less (parabolic equivalent)
-    double blend_tolerance = fmin(fmin(*nominal_tolerance, 
-                prev_tc->nominal_length * tolerance_ratio),
-            tc->nominal_length * tolerance_ratio);
+    double blend_tolerance = fmin(fmin(*nominal_tolerance, prev_tc->nominal_length * tolerance_ratio),
+                                  tc->nominal_length * tolerance_ratio);
     *T_blend = blend_tolerance;
     return 0;
 }
@@ -532,6 +533,12 @@ int tcInit(TC_STRUCT * const tc,
 
     tc->active_depth = 1;
 
+    tc->lookahead_target = 0.0;
+    tc->progress = 0.0;
+    tc->accel_state = ACCEL_S3;
+    tc->feed_override = 0.0;
+    tc->cur_accel = 0.0;
+    tc->currentvel = 0.0;
     return TP_ERR_OK;
 }
 
@@ -542,16 +549,25 @@ int tcInit(TC_STRUCT * const tc,
 int tcSetupMotion(TC_STRUCT * const tc,
         double vel,
         double ini_maxvel,
-        double acc)
+        double acc,
+        double ini_maxjerk,
+        double cycle_time)
 {
 
-    tc->maxaccel = acc;
+    if (ini_maxjerk == 0) {
+        rtapi_print_msg(RTAPI_MSG_WARN, "jerk is not provided or jerk is 0\n");
+        ini_maxjerk = 1e99; //!< force JERK to unlimited
+    }
 
-    tc->maxvel = ini_maxvel;
+    tc->jerk = ini_maxjerk * cycle_time * cycle_time * cycle_time;      // unit: dt^3
 
-    tc->reqvel = vel;
+    tc->maxaccel = acc * cycle_time * cycle_time;                       // unit: dt^2
+
+    tc->maxvel = ini_maxvel * cycle_time;                               // unit: dt
+
+    tc->reqvel = vel;                                                   // unit: sec
     // Initial guess at target velocity is just the requested velocity
-    tc->target_vel = vel;
+    tc->target_vel = vel;                                               // unit: sec
 
     return TP_ERR_OK;
 }

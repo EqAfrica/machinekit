@@ -19,6 +19,7 @@
 #include "tp_types.h"
 #include "tcq.h"
 
+<<<<<<< HEAD
 typedef struct tp_shared_t tp_shared_t;
 
 // tp API method signatures
@@ -81,6 +82,41 @@ typedef int (*tcqFull_t)(TC_QUEUE_STRUCT const * const tcq);
 
 //gets called when a new tc is taken from the queue. it checks and toggles all needed DIO's
 typedef void (*tpToggleDIOs_t)(TP_STRUCT const * const tp,TC_STRUCT * tc);
+=======
+int tpCreate(TP_STRUCT * tp, int _queueSize, TC_STRUCT * tcSpace);
+int tpClear(TP_STRUCT * tp);
+int tpInit(TP_STRUCT * tp);
+int tpClearDIOs(TP_STRUCT * const tp);
+int tpSetCycleTime(TP_STRUCT * tp, double secs);
+int tpSetVmax(TP_STRUCT * tp, double vmax, double ini_maxvel);
+int tpSetVlimit(TP_STRUCT * tp, double limit);
+int tpSetAmax(TP_STRUCT * tp, double amax);
+int tpSetJmax(TP_STRUCT * tp, double jmax);
+int tpSetId(TP_STRUCT * tp, int id);
+int tpGetExecId(TP_STRUCT * tp);
+int tpSetTermCond(TP_STRUCT * tp, int cond, double tolerance);
+int tpSetPos(TP_STRUCT * tp, EmcPose const * const pos);
+int tpAddCurrentPos(TP_STRUCT * const tp, EmcPose const * const disp);
+int tpSetCurrentPos(TP_STRUCT * const tp, EmcPose const * const pos);
+int tpAddRigidTap(TP_STRUCT * tp, EmcPose end, double vel, double
+        ini_maxvel, double acc, unsigned char enables);
+int tpAddLine(TP_STRUCT * tp, EmcPose end, int type, double vel, double
+                     ini_maxvel, double acc, double jerk, unsigned char enables, char atspeed, int indexrotary);
+int tpAddCircle(TP_STRUCT * tp, EmcPose end, PmCartesian center,
+        PmCartesian normal, int turn, int type, double vel, double ini_maxvel,
+                       double acc, double jerk, unsigned char enables, char atspeed);
+int tpRunCycle(TP_STRUCT * tp, long period);
+int tpPause(TP_STRUCT * tp);
+int tpResume(TP_STRUCT * tp);
+int tpAbort(TP_STRUCT * tp);
+int tpGetPos(TP_STRUCT const  * const tp, EmcPose * const pos);
+int tpIsDone(TP_STRUCT * tp);
+int tpQueueDepth(TP_STRUCT * tp);
+int tpActiveDepth(TP_STRUCT * tp);
+int tpGetMotionType(TP_STRUCT * tp);
+int tpSetSpindleSync(TP_STRUCT * tp, double sync, int wait);
+void tpToggleDIOs(TC_STRUCT * tc); //gets called when a new tc is taken from the queue. it checks and toggles all needed DIO's
+>>>>>>> c01773447196b072f2711b0c091a44a2bd26f7b3
 
 typedef int (*tpSetAout_t)(TP_STRUCT * tp, unsigned char index, double start, double end);
 

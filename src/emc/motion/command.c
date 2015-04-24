@@ -59,6 +59,7 @@
 
 #include <linux/types.h>
 #include <float.h>
+#include <stdint.h>
 #include "posemath.h"
 #include "rtapi.h"
 #include "hal.h"
@@ -71,6 +72,10 @@
 #include "motion_types.h"
 
 #include "tp_debug.h"
+
+#ifdef USB_MOTION_ENABLE
+#include "sync_cmd.h"
+#endif
 
 // Mark strings for translation, but defer translation to userspace
 #define _(s) (s)
@@ -236,19 +241,24 @@ int inRange(EmcPose pos, int id, char *move_type)
 	    /* if joint is not active, don't even look at its limits */
 	    continue;
 	}
-	if (joint_pos[joint_num] > joint->max_pos_limit) {
-            in_range = 0;
-	    if (move_type != NULL)
-		reportError(_("%s move on line %d would exceed joint %d's positive limit"),
-			    move_type, id, joint_num);
-        }
 
-        if (joint_pos[joint_num] < joint->min_pos_limit) {
-	    in_range = 0;
-	    if (move_type != NULL)
-		reportError(_("%s move on line %d would exceed joint %d's negative limit"),
-			    move_type, id, joint_num);
-	}
+        /* bypass soft limit checking if both max and min pos_limit are 0 */ 
+        if ((joint->max_pos_limit != 0) || (joint->min_pos_limit != 0)) {
+
+	    if (joint_pos[joint_num] > joint->max_pos_limit) {
+                in_range = 0;
+	        if (move_type != NULL)
+	    	reportError(_("%s move on line %d would exceed joint %d's positive limit"),
+	    		    move_type, id, joint_num);
+            }
+
+            if (joint_pos[joint_num] < joint->min_pos_limit) {
+	        in_range = 0;
+	        if (move_type != NULL)
+	    	reportError(_("%s move on line %d would exceed joint %d's negative limit"),
+	    		    move_type, id, joint_num);
+	    }
+        }
     }
     return in_range;
 }
@@ -387,7 +397,21 @@ void emcmotCommandHandler(void *arg, long period)
     emcmot_comp_entry_t *comp_entry;
     char issue_atspeed = 0;
     
+    // int oldlevel;
+    // oldlevel = rtapi_set_msg_level(RTAPI_MSG_ALL); // uncomment for DEBUG
+
 check_stuff ( "before command_handler()" );
+#ifdef USB_MOTION_ENABLE
+    emcmotStatus->wait_risc = 0;
+    if ((emcmotStatus->probing == 1) &&
+        (emcmotConfig->usbmotEnable) &&
+        (emcmotCommand->command == EMCMOT_END_PROBE))
+    {
+        // prevent execute EMCMOT_END_PROBE for G38.x
+        emcmotStatus->wait_risc = 1;
+        return;
+    }
+#endif // USB_MOTION_ENABLE
 
     /* check for split read */
     if (emcmotCommand->head != emcmotCommand->tail) {
@@ -423,8 +447,10 @@ check_stuff ( "before command_handler()" );
 	}
 
 /* printing of commands for troubleshooting */
-	rtapi_print_msg(RTAPI_MSG_DBG, "%d: CMD %d, code %3d ", emcmotStatus->heartbeat,
-	    emcmotCommand->commandNum, emcmotCommand->command);
+	rtapi_print_msg(RTAPI_MSG_DBG, "%s:%d heartbeat(%d): CMD %d, code %3d ",
+	        __FILE__, __LINE__,
+	        emcmotStatus->heartbeat,
+	        emcmotCommand->commandNum, emcmotCommand->command);
 
 	switch (emcmotCommand->command) {
 	case EMCMOT_ABORT:
@@ -466,7 +492,11 @@ check_stuff ( "before command_handler()" );
 	    }
 	    emcmotStatus->pause_state =  *(emcmot_hal_data->pause_state) = PS_RUNNING;
 	    emcmotStatus->resuming = 0;
-
+            if (emcmotStatus->probing && emcmotConfig->usbmotEnable){
+                emcmotStatus->probing = 0;
+                emcmotStatus->probeTripped = 0;
+                emcmotStatus->probedPos = emcmotStatus->carte_pos_cmd;
+            }
 	    break;
 
 	case EMCMOT_AXIS_ABORT: //FIXME-AJ: rename
@@ -475,7 +505,7 @@ check_stuff ( "before command_handler()" );
 	    /* this command stops a single joint.  It is only usefull
 	       in free mode, so in coord or teleop mode it does
 	       nothing. */
-	    rtapi_print_msg(RTAPI_MSG_DBG, "AXIS_ABORT");
+	    rtapi_print_msg(RTAPI_MSG_DBG, "%s:%d AXIS_ABORT", __FILE__, __LINE__);
 	    rtapi_print_msg(RTAPI_MSG_DBG, " %d", joint_num);
 	    if (GET_MOTION_TELEOP_FLAG()) {
 		/* do nothing in teleop mode */
@@ -483,7 +513,7 @@ check_stuff ( "before command_handler()" );
 		/* do nothing in coord mode */
 	    } else {
 		/* validate joint */
-		if (joint == 0) {
+		if (joint == NULL) {
 		    break;
 		}
 		/* tell joint planner to stop */
@@ -929,6 +959,7 @@ check_stuff ( "before command_handler()" );
             if(!is_feed_type(emcmotCommand->motion_type) && emcmotStatus->spindle.css_factor) {
                 emcmotStatus->atspeed_next_feed = 1;
             }
+<<<<<<< HEAD
 	    /* append it to the emcmotDebug->tp */
 	    emcmotConfig->vtp->tpSetId(&emcmotDebug->tp, emcmotCommand->id);
 	    int res_addline = emcmotConfig->vtp->tpAddLine(&emcmotDebug->tp,
@@ -956,6 +987,23 @@ check_stuff ( "before command_handler()" );
                 emcmotStatus->atspeed_next_feed = 1;
             }
         } else {
+=======
+	    /* append it to the emcmotDebug->queue */
+	    tpSetId(emcmotQueue, emcmotCommand->id);
+
+	    if (-1 == tpAddLine(emcmotQueue, emcmotCommand->pos, emcmotCommand->motion_type,
+                                emcmotCommand->vel, emcmotCommand->ini_maxvel, 
+                                emcmotCommand->acc, emcmotCommand->ini_maxjerk,
+                                emcmotStatus->enables_new, issue_atspeed,
+                                emcmotCommand->turn)) {
+		reportError(_("can't add linear move"));
+		emcmotStatus->commandStatus = EMCMOT_COMMAND_BAD_EXEC;
+		abort_and_switchback(); // tpAbort(emcmotQueue);
+
+		SET_MOTION_ERROR_FLAG(1);
+		break;
+	    } else {
+>>>>>>> c01773447196b072f2711b0c091a44a2bd26f7b3
 		SET_MOTION_ERROR_FLAG(0);
 		/* set flag that indicates all joints need rehoming, if any
 		   joint is moved in joint mode, for machines with no forward
@@ -1000,11 +1048,17 @@ check_stuff ( "before command_handler()" );
                             emcmotCommand->center, emcmotCommand->normal,
                             emcmotCommand->turn, emcmotCommand->motion_type,
                             emcmotCommand->vel, emcmotCommand->ini_maxvel,
+<<<<<<< HEAD
                             emcmotCommand->acc, emcmotStatus->enables_new,
                             issue_atspeed, emcmotCommand->tag);
         if (res_addcircle < 0) {
             reportError(_("can't add circular move at line %d, error code %d"),
                     emcmotCommand->id, res_addcircle);
+=======
+                            emcmotCommand->acc, emcmotCommand->ini_maxjerk,
+                            emcmotStatus->enables_new, issue_atspeed)) {
+		reportError(_("can't add circular move"));
+>>>>>>> c01773447196b072f2711b0c091a44a2bd26f7b3
 		emcmotStatus->commandStatus = EMCMOT_COMMAND_BAD_EXEC;
 		abort_and_switchback(); // tpAbort(emcmotQueue);
 
@@ -1074,6 +1128,26 @@ check_stuff ( "before command_handler()" );
 	    rtapi_print_msg(RTAPI_MSG_DBG, "SET_ACCEL");
 	    emcmotStatus->acc = emcmotCommand->acc;
 	    emcmotConfig->vtp->tpSetAmax(emcmotPrimQueue, emcmotStatus->acc);
+	    break;
+
+	case EMCMOT_SET_JOINT_JERK_LIMIT:
+	    rtapi_print_msg(RTAPI_MSG_DBG, "SET_JOINT_JERK_LIMIT");
+	    rtapi_print_msg(RTAPI_MSG_DBG, " %d\n", joint_num);
+	    emcmot_config_change();
+	    /* check joint range */
+	    if (joint == 0) {
+		break;
+	    }
+	    joint->jerk_limit = emcmotCommand->jerk;
+	    break;
+
+	case EMCMOT_SET_JERK:
+	    /* set the max acceleration */
+	    /* can do it at any time */
+	    rtapi_print_msg(RTAPI_MSG_DBG, "SET_JERK");
+	    emcmotStatus->jerk = emcmotCommand->jerk;
+	    tpSetJmax(emcmotPrimQueue, emcmotStatus->jerk);
+
 	    break;
 
 	case EMCMOT_PAUSE:
@@ -1398,6 +1472,23 @@ check_stuff ( "before command_handler()" );
             emcmotStatus->probeTripped = 0;
 	    break;
 
+        case EMCMOT_END_PROBE:
+            rtapi_print_msg(RTAPI_MSG_DBG, "END_PROBE");
+            if(emcmotConfig->usbmotEnable)
+            {
+                if ((emcmotStatus->probeTripped == 0) &&
+                    ((emcmotCommand->probe_type & 1) == 0))
+                {
+                    // if suppress errors = off... (G38.2, G38.4)
+                    reportError(_("move finished without making contact"));
+                    emcmotStatus->commandStatus = EMCMOT_COMMAND_INVALID_PARAMS;
+                    abort_and_switchback(); // tpAbort(emcmotQueue);
+                    SET_MOTION_ERROR_FLAG(1);
+                }
+                emcmotStatus->probing = 0;
+            }
+            break;
+
 	case EMCMOT_PROBE:
 	    /* most of this is taken from EMCMOT_SET_LINE */
 	    /* emcmotDebug->tp up a linear move */
@@ -1420,7 +1511,46 @@ check_stuff ( "before command_handler()" );
 		abort_and_switchback(); // tpAbort(emcmotQueue);
 		SET_MOTION_ERROR_FLAG(1);
 		break;
-	    } else if (!(emcmotCommand->probe_type & 1)) {
+	    }
+
+#ifdef USB_MOTION_ENABLE
+	    if(emcmotConfig->usbmotEnable)
+	    {
+                int n, result, amode, dmode,din_value;
+                float ain_value;
+
+                n = *(emcmot_hal_data->trigger_din);
+                din_value = *(emcmot_hal_data->synch_di[n]);
+                n = *(emcmot_hal_data->trigger_ain);
+                ain_value= *(emcmot_hal_data->analog_input[n]);
+                amode = (ain_value < *(emcmot_hal_data->trigger_level)) ^ (*(emcmot_hal_data->trigger_cond));
+                dmode = (din_value == 0) ^ (*(emcmot_hal_data->trigger_cond));
+
+                switch(*(emcmot_hal_data->trigger_type))
+                {
+                case OR:
+                    result = amode | dmode;
+                    break;
+                case AONLY:
+                    result = amode;
+                    break;
+                case DONLY:
+                    result = dmode;
+                    break;
+                case AND:
+                    result = amode & dmode;
+                    break;
+                }
+                if (result != 0){
+                    reportError(_("Probe condition is already true when starting move"));
+                    emcmotStatus->commandStatus = EMCMOT_COMMAND_BAD_EXEC;
+                    abort_and_switchback(); // tpAbort(emcmotQueue);
+                    SET_MOTION_ERROR_FLAG(1);
+                    break;
+                }
+            } else
+#endif // USB_MOTION_ENABLE
+            if (!(emcmotCommand->probe_type & 1)) {
                 // if suppress errors = off...
 
                 int probeval = !!*(emcmot_hal_data->probe_input);
@@ -1428,7 +1558,7 @@ check_stuff ( "before command_handler()" );
 
                 if (probeval != probe_whenclears) {
                     // the probe is already in the state we're seeking.
-                    if(probe_whenclears) 
+                    if(probe_whenclears)
                         reportError(_("Probe is already clear when starting G38.4 or G38.5 move"));
                     else
                         reportError(_("Probe is already tripped when starting G38.2 or G38.3 move"));
@@ -1439,8 +1569,8 @@ check_stuff ( "before command_handler()" );
                     break;
                 }
             }
-
 	    /* append it to the emcmotDebug->queue */
+<<<<<<< HEAD
 	    emcmotConfig->vtp->tpSetId(emcmotQueue, emcmotCommand->id);
 	    if (-1 == emcmotConfig->vtp->tpAddLine(emcmotQueue,
 						   emcmotCommand->pos,
@@ -1451,6 +1581,18 @@ check_stuff ( "before command_handler()" );
 						   emcmotStatus->enables_new,
 						   0, -1,
 						   emcmotCommand->tag)) {
+=======
+	    tpSetId(emcmotQueue, emcmotCommand->id);
+	    if (-1 == tpAddLine(emcmotQueue,
+	                        emcmotCommand->pos,
+                                emcmotCommand->motion_type,
+                                emcmotCommand->vel,
+                                emcmotCommand->ini_maxvel,
+                                emcmotCommand->acc,
+                                emcmotCommand->ini_maxjerk,
+                                emcmotStatus->enables_new, 0, -1)) {
+
+>>>>>>> c01773447196b072f2711b0c091a44a2bd26f7b3
 		reportError(_("can't add probe move"));
 		emcmotStatus->commandStatus = EMCMOT_COMMAND_BAD_EXEC;
 		abort_and_switchback(); // tpAbort(emcmotQueue);
@@ -1721,14 +1863,10 @@ check_stuff ( "before command_handler()" );
             emcmotStatus->tool_offset = emcmotCommand->tool_offset;
             break;
 
-	default:
-	    rtapi_print_msg(RTAPI_MSG_DBG, "UNKNOWN");
-	    reportError(_("unrecognized command %d"), emcmotCommand->command);
-	    emcmotStatus->commandStatus = EMCMOT_COMMAND_UNKNOWN_COMMAND;
-	    break;
         case EMCMOT_SET_MAX_FEED_OVERRIDE:
             emcmotConfig->maxFeedScale = emcmotCommand->maxFeedScale;
             break;
+
         case EMCMOT_SETUP_ARC_BLENDS:
             emcmotConfig->arcBlendEnable = emcmotCommand->arcBlendEnable;
             emcmotConfig->arcBlendFallbackEnable = emcmotCommand->arcBlendFallbackEnable;
@@ -1737,6 +1875,15 @@ check_stuff ( "before command_handler()" );
             emcmotConfig->arcBlendRampFreq = emcmotCommand->arcBlendRampFreq;
             break;
 
+        case EMCMOT_SETUP_USBMOT:
+            emcmotConfig->usbmotEnable = emcmotCommand->usbmotEnable;
+            break;
+
+        default:
+            rtapi_print_msg(RTAPI_MSG_DBG, "UNKNOWN");
+            reportError(_("unrecognized command %d"), emcmotCommand->command);
+            emcmotStatus->commandStatus = EMCMOT_COMMAND_UNKNOWN_COMMAND;
+            break;
 	}			/* end of: command switch */
 	if (emcmotStatus->commandStatus != EMCMOT_COMMAND_OK) {
 	    rtapi_print_msg(RTAPI_MSG_DBG, "ERROR: %d",
@@ -1751,6 +1898,8 @@ check_stuff ( "before command_handler()" );
     }
     /* end of: if-new-command */
 check_stuff ( "after command_handler()" );
+    
+    // rtapi_set_msg_level(oldlevel); // uncomment for DEBUG
 
     return;
 }

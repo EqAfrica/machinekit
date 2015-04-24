@@ -72,8 +72,14 @@ class StatCanon(rs274.glcanon.GLCanon, rs274.interpret.StatMixin):
 class Gremlin(gtk.gtkgl.widget.DrawingArea, glnav.GlNavBase,
               rs274.glcanon.GlCanonDraw):
     rotation_vectors = [(1.,0.,0.), (0., 0., 1.)]
+    canon = None
+    program_pos = [0, 0, 0, 0, 0, 0, 0, 0]
+    path_tracking = False
+    __gsignals__ = {'line-selected': (gobject.SIGNAL_RUN_FIRST, gobject.TYPE_NONE, (gobject.TYPE_INT,))}
+    canon_error = [None, None]
 
     def __init__(self, inifile):
+        gobject.GObject.__init__(self)
 
         display_mode = ( gtk.gdkgl.MODE_RGB | gtk.gdkgl.MODE_DEPTH |
                          gtk.gdkgl.MODE_DOUBLE )
@@ -125,6 +131,11 @@ class Gremlin(gtk.gtkgl.widget.DrawingArea, glnav.GlNavBase,
         self.maxlat = 90
 
         self.highlight_line = None
+        self.material_buttom_left = (0.0,0.0)
+        self.material_buttom_right = (0.0,0.0)
+        self.material_top_left = (0.0,0.0)
+        self.material_top_right = (0.0,0.0)
+        self.draw_material_state = False
         self.program_alpha = False
         self.use_joints_mode = False
         self.use_commanded = True
@@ -155,7 +166,8 @@ class Gremlin(gtk.gtkgl.widget.DrawingArea, glnav.GlNavBase,
             if self.stat.axis_mask & (1<<i) == 0: continue
             live_axis_count += 1
         self.num_joints = int(inifile.find("TRAJ", "JOINTS") or live_axis_count)
-
+        self.highlight_mode = 'line'
+        self.highlight_mode = inifile.find("DISPLAY", "HIGHLIGHT_MODE")
     def activate(self):
         glcontext = gtk.gtkgl.widget_get_gl_context(self)
         gldrawable = gtk.gtkgl.widget_get_gl_drawable(self)
@@ -243,12 +255,19 @@ class Gremlin(gtk.gtkgl.widget.DrawingArea, glnav.GlNavBase,
             filename = s.file
         elif not filename and not s.file:
             return
-
+        if ('nc_subroutines') in filename:
+            return
         td = tempfile.mkdtemp()
         self._current_file = filename
         try:
             random = int(self.inifile.find("EMCIO", "RANDOM_TOOLCHANGER") or 0)
-            canon = StatCanon(self.colors, self.get_geometry(),self.lathe_option, s, random)
+            if self.canon == None:
+                canon = StatCanon(self.colors, self.get_geometry(),self.lathe_option, s, random)
+                self.canon = canon
+            else:
+                canon = self.canon
+                canon.__init__(self.colors, self.get_geometry(), self.lathe_option, s, random)
+#             canon.set_highlight_mode(self.highlight_mode)
             parameter = self.inifile.find("RS274NGC", "PARAMETER_FILE")
             temp_parameter = os.path.join(td, os.path.basename(parameter or "linuxcnc.var"))
             if parameter:
@@ -290,6 +309,24 @@ class Gremlin(gtk.gtkgl.widget.DrawingArea, glnav.GlNavBase,
     def get_show_tool(self): return self.show_tool
     def get_show_distance_to_go(self): return self.show_dtg
     def get_grid_size(self): return self.grid_size
+    def get_material_dimension(self):
+        return self.material_top_right, self.material_top_left, self.material_buttom_left, self.material_buttom_right 
+    def set_material_dimension(self, pos_0=None, pos_1=None, pos_2=None, pos_3=None):
+        self.material_buttom_left = pos_0
+        self.material_buttom_right = pos_1
+        self.material_top_left = pos_3
+        self.material_top_right = pos_2
+        
+        if self.material_buttom_left is None \
+            or self.material_buttom_right is None \
+            or self.material_top_left is None \
+            or self.material_top_right is None :
+            self.draw_material_state = False
+        else:
+            self.draw_material_state = True
+            
+    def draw_material(self):
+        return self.draw_material_state
 
     def get_view(self):
         view_dict = {'x':0, 'y':1, 'z':2, 'p':3}
@@ -320,7 +357,11 @@ class Gremlin(gtk.gtkgl.widget.DrawingArea, glnav.GlNavBase,
         if not self.select_primed: return
         x, y = self.select_primed
         self.select_primed = None
-        self.select(x, y)
+        self.highlight_line = self.select(x, y)
+        # emit line-select
+        if self.highlight_line is not None:
+            # highlight_line become block no in 'block' mode
+            self.emit('line-selected', self.highlight_line)
 
     def select_cancel(self, widget=None, event=None):
         self.select_primed = None
@@ -351,10 +392,10 @@ class Gremlin(gtk.gtkgl.widget.DrawingArea, glnav.GlNavBase,
         if self.mouse_btn_mode == 0:
             if button1:
                 if shift:
-                    self.translateOrRotate(event.x, event.y)
-                elif not cancel:
-                    self.set_prime(event.x, event.y)
                     self.rotateOrTranslate(event.x, event.y)
+                elif not cancel:
+                    self.translateOrRotate(event.x, event.y)
+
             elif button2:
                 self.translateOrRotate(event.x, event.y)
             elif button3:

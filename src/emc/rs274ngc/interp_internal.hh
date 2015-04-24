@@ -219,6 +219,8 @@ enum SPINDLE_MODE { CONSTANT_RPM, CONSTANT_SURFACE };
 #define G_61   610
 #define G_61_1 611
 #define G_64   640
+#define G_70   700
+#define G_71   710
 #define G_73   730
 #define G_76   760
 #define G_80   800
@@ -640,6 +642,17 @@ typedef struct setup_struct
   double axis_offset_x;         // X-axis g92 offset
   double axis_offset_y;         // Y-axis g92 offset
   double axis_offset_z;         // Z-axis g92 offset
+
+  double saved_AA;
+  double saved_BB;
+  double saved_CC;
+  double saved_x;
+  double saved_y;
+  double saved_z;
+  double saved_u;
+  double saved_v;
+  double saved_w;
+
   // block block1;                 // parsed next block
   // stack of controlling blocks for remap execution
   block blocks[MAX_NESTED_REMAPS];

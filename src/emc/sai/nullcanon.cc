@@ -46,6 +46,9 @@ static double            _program_position_c = 0; /*CC*/
 static double            _program_position_x = 0;
 static double            _program_position_y = 0;
 static double            _program_position_z = 0;
+static double            _program_position_u = 0;
+static double            _program_position_v = 0;
+static double            _program_position_w = 0;
 static double            _spindle_speed;
 static CANON_DIRECTION   _spindle_turning;
 int                      _pockets_max = CANON_POCKETS_MAX; /*Not static. Driver reads  */
@@ -209,6 +212,10 @@ extern void SET_NAIVECAM_TOLERANCE(double tolerance)
 {
 }
 
+void SET_INTERP_PARAMS(int call_level, int remap_level)
+{
+}
+
 void SELECT_PLANE(CANON_PLANE in_plane)
 {
 
@@ -293,11 +300,11 @@ void SPINDLE_RETRACT_TRAVERSE()
 void SET_SPINDLE_MODE(double arg) {
 }
 
-void START_SPINDLE_CLOCKWISE()
+void START_SPINDLE_CLOCKWISE(int line)
 {
 }
 
-void START_SPINDLE_COUNTERCLOCKWISE()
+void START_SPINDLE_COUNTERCLOCKWISE(int line)
 {
 
 }
@@ -306,7 +313,7 @@ void SET_SPINDLE_SPEED(double rpm)
 {
 }
 
-void STOP_SPINDLE_TURNING()
+void STOP_SPINDLE_TURNING(int l)
 {
 
 }
@@ -416,7 +423,7 @@ void MIST_ON()
 void PALLET_SHUTTLE()
 {}
 
-void TURN_PROBE_OFF()
+void TURN_PROBE_OFF(unsigned char probe_type)
 {}
 
 void TURN_PROBE_ON()
@@ -485,7 +492,7 @@ CANON_MOTION_MODE motion_mode;
 
 int GET_EXTERNAL_DIGITAL_INPUT(int index, int def) { return def; }
 double GET_EXTERNAL_ANALOG_INPUT(int index, double def) { return def; }
-int WAIT(int index, int input_type, int wait_type, double timeout) { return 0; }
+int WAIT(int index, int input_type, int wait_type, double timeout, int line) { return 0; }
 int UNLOCK_ROTARY(int line_no, int axis) {return 0;}
 int LOCK_ROTARY(int line_no, int axis) {return 0;}
 
@@ -592,6 +599,22 @@ double GET_EXTERNAL_POSITION_V()
 double GET_EXTERNAL_POSITION_W()
 {
     return 0.;
+}
+
+/* External call to update the canon end point. */
+void INTERP_UPDATE_END_POINT(double x, double y, double z,
+                            double a, double b, double c,
+                            double u, double v, double w)
+{
+    _program_position_x = x;
+    _program_position_y = y;
+    _program_position_z = z;
+    _program_position_a = a;
+    _program_position_b = b;
+    _program_position_c = c;
+    _program_position_u = u;
+    _program_position_v = v;
+    _program_position_w = w;
 }
 
 double GET_EXTERNAL_PROBE_POSITION_U()
@@ -723,12 +746,12 @@ int USER_DEFINED_FUNCTION_ADD(USER_DEFINED_FUNCTION_TYPE func, int num)
   return 0;
 }
 
-void SET_MOTION_OUTPUT_BIT(int index)
+void SET_MOTION_OUTPUT_BIT(int index, int line)
 {
     return;
 }
 
-void CLEAR_MOTION_OUTPUT_BIT(int index)
+void CLEAR_MOTION_OUTPUT_BIT(int index, int line)
 {
     return;
 }
@@ -738,12 +761,12 @@ void SET_MOTION_OUTPUT_VALUE(int index, double value)
     return;
 }
 
-void SET_AUX_OUTPUT_BIT(int index)
+void SET_AUX_OUTPUT_BIT(int index, int line)
 {
     return;
 }
 
-void CLEAR_AUX_OUTPUT_BIT(int index)
+void CLEAR_AUX_OUTPUT_BIT(int index, int line)
 {
     return;
 }

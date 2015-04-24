@@ -348,7 +348,7 @@ $(info $(shell  ../scripts/check-build-vs-configure-sha))
 # Compilation options.	Perhaps some of these should come from Makefile.inc? (CXXFLAGS now does)
 INTEGER_OVERFLOW_FLAGS := $(call cc-option,-fwrapv) $(call cc-option, -fno-strict-overflow)
 OPT :=  $(INTEGER_OVERFLOW_FLAGS)
-DEBUG := -g -Wall -funwind-tables
+DEBUG := -g -Wall -funwind-tables $(EXTRA_DEBUG)
 PROFILE_CFLAGS :=
 PROFILE_LDFLAGS :=
 
@@ -1385,6 +1385,19 @@ hm2_pci-objs  :=			  \
     $(MATHSTUB)
 endif
 
+## Begin: WOU - wishbone over usb
+# build WOU if there's libwou-dev installed
+ifneq ($(WOU_VER),)
+SUBDIRS += hal/drivers/ar-usb
+EXTRA_CFLAGS += $(WOU_CFLAGS) -DUSB_MOTION_ENABLE -I$(BASEPWD)/hal/drivers/ar-usb
+# EXTRAFLAGS is for emctaskmain.cc ... etc.
+EXTRAFLAGS += $(WOU_CFLAGS) -DUSB_MOTION_ENABLE -I$(BASEPWD)/hal/drivers/ar-usb
+LDFLAGS += $(WOU_LIBS)
+obj-$(CONFIG_WOU) += wou.o
+wou-objs := hal/drivers/ar-usb/wou_stepgen.o $(MATHSTUB)
+endif
+## End: WOU - wishbone over usb
+
 obj-$(CONFIG_PROBE_PARPORT) += probe_parport.o
 probe_parport-objs := hal/drivers/probe_parport.o $(MATHSTUB)
 endif
@@ -1418,6 +1431,9 @@ maxkins-objs := emc/kinematics/maxkins.o
 
 obj-m += gantrykins.o
 gantrykins-objs := emc/kinematics/gantrykins.o
+
+obj-m += align_gantry_kins.o
+align_gantry_kins-objs := emc/kinematics/align_gantry_kins.o
 
 obj-m += rotatekins.o
 rotatekins-objs := emc/kinematics/rotatekins.o
@@ -1457,6 +1473,7 @@ motmod-objs += emc/motion/motion.o
 motmod-objs += emc/motion/command.o
 motmod-objs += emc/motion/control.o
 motmod-objs += emc/motion/homing.o
+motmod-objs += emc/motion/usb_homing.o
 motmod-objs += emc/motion/emcmotglb.o
 motmod-objs += emc/motion/emcmotutil.o
 motmod-objs += emc/motion/stashf.o
@@ -1591,6 +1608,10 @@ endif
 $(RTLIBDIR)/hm2_test$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(hm2_test-objs))
 endif
 
+ifneq ($(WOU_VER),)
+$(RTLIBDIR)/wou$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(wou-objs))
+endif
+
 ifdef TARGET_PLATFORM_BEAGLEBONE
 ifeq ($(BUILD_SYS),user-dso)
 $(RTLIBDIR)/hal_pru$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(hal_pru-objs))
@@ -1631,9 +1652,14 @@ $(RTLIBDIR)/trivkins$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(trivkins-objs))
 $(RTLIBDIR)/5axiskins$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(5axiskins-objs))
 $(RTLIBDIR)/maxkins$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(maxkins-objs))
 $(RTLIBDIR)/gantrykins$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(gantrykins-objs))
+$(RTLIBDIR)/align_gantry_kins$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(align_gantry_kins-objs))
 $(RTLIBDIR)/rotatekins$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(rotatekins-objs))
 $(RTLIBDIR)/tripodkins$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(tripodkins-objs))
+<<<<<<< HEAD
 $(RTLIBDIR)/ntripodkins$(MODULE_EXT):$(addprefix $(OBJDIR)/,$(ntripodkins-objs))
+=======
+$(RTLIBDIR)/ntripodkins$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(ntripodkins-objs))
+>>>>>>> c01773447196b072f2711b0c091a44a2bd26f7b3
 $(RTLIBDIR)/lineardeltakins$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(lineardeltakins-objs))
 $(RTLIBDIR)/genhexkins$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(genhexkins-objs))
 $(RTLIBDIR)/genserkins$(MODULE_EXT): $(addprefix $(OBJDIR)/,$(genserkins-objs))
